@@ -43,6 +43,30 @@ export const router = createRouter({
           meta: { navLabel: 'Roles y permisos', permission: PERMISSIONS.ROLES_READ },
         },
         {
+          path: 'areas',
+          name: 'areas',
+          component: () => import('@/views/AreasView.vue'),
+          meta: { navLabel: 'Áreas', permission: PERMISSIONS.CATALOGS_READ },
+        },
+        {
+          path: 'grupos-de-pago',
+          name: 'payment-groups',
+          component: () => import('@/views/PaymentGroupsView.vue'),
+          meta: { navLabel: 'Grupos de pago', permission: PERMISSIONS.CATALOGS_READ },
+        },
+        {
+          path: 'parametros',
+          name: 'settings',
+          component: () => import('@/views/SettingsView.vue'),
+          meta: { navLabel: 'Parámetros', permission: PERMISSIONS.SETTINGS_MANAGE },
+        },
+        {
+          path: 'auditoria',
+          name: 'audit-log',
+          component: () => import('@/views/AuditLogView.vue'),
+          meta: { navLabel: 'Auditoría', permission: PERMISSIONS.AUDIT_READ },
+        },
+        {
           path: 'sin-acceso',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),

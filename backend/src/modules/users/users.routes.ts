@@ -24,7 +24,7 @@ usersRouter.get('/', requirePermission(PERMISSIONS.USERS_READ), async (_req, res
 });
 
 usersRouter.post('/', requirePermission(PERMISSIONS.USERS_MANAGE), async (req, res) => {
-  const user = await createUser(createUserSchema.parse(req.body));
+  const user = await createUser(req.user!.id, createUserSchema.parse(req.body));
   res.status(201).json({ user });
 });
 

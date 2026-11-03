@@ -6,5 +6,7 @@ export default defineConfig({
     env: testEnv,
     globalSetup: './tests/global-setup.ts',
     include: ['tests/**/*.test.ts'],
+    // Todos los archivos comparten la misma base SQLite.
+    fileParallelism: false,
   },
 });

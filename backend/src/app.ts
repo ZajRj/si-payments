@@ -2,8 +2,12 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import helmet from 'helmet';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { areasRouter } from './modules/areas/areas.routes.js';
+import { auditRouter } from './modules/audit/audit.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { paymentGroupsRouter } from './modules/payment-groups/payment-groups.routes.js';
 import { rolesRouter } from './modules/roles/roles.routes.js';
+import { settingsRouter } from './modules/settings/settings.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 
 export function createApp() {
@@ -23,6 +27,10 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/roles', rolesRouter);
+  app.use('/api/settings', settingsRouter);
+  app.use('/api/areas', areasRouter);
+  app.use('/api/payment-groups', paymentGroupsRouter);
+  app.use('/api/audit-log', auditRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

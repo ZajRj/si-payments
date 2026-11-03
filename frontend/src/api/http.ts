@@ -10,7 +10,7 @@ export class ApiError extends Error {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   // Un 401 aquí es una respuesta esperada (login, comprobar sesión), no una sesión expirada.
   ignoreUnauthorized?: boolean;
