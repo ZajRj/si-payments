@@ -37,6 +37,17 @@ const filters = reactive({
 // Fecha local en formato AAAA-MM-DD, para comparar con las fechas de la API.
 const today = new Date().toLocaleDateString('sv-SE');
 
+function nextDay(date: string) {
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+// El cambio de monto debe aplicar al menos un día después del inicio y antes del fin.
+function canChangeAmount(assignment: Assignment) {
+  return nextDay(assignment.startDate) <= assignment.effectiveEndDate;
+}
+
 function status(assignment: Assignment) {
   if (assignment.startDate > today) return 'Futura';
   if (assignment.effectiveEndDate < today) return 'Finalizada';
@@ -87,7 +98,8 @@ const selectedProject = computed(() => projects.value.find((project) => project.
 function openCreate() {
   Object.assign(form, {
     personId: 0,
-    projectId: filters.projectId,
+    // Solo se preselecciona el proyecto del filtro si admite asignaciones nuevas.
+    projectId: activeProjects.value.some((project) => project.id === filters.projectId) ? filters.projectId : 0,
     paymentGroupId: 0,
     amount: '',
     startDate: '',
@@ -99,6 +111,11 @@ function openCreate() {
 
 async function save() {
   formError.value = '';
+  // Las opciones "Selecciona…" tienen valor 0 y el navegador las acepta como elegidas.
+  if (!form.personId || !form.projectId || !form.paymentGroupId) {
+    formError.value = 'Selecciona la persona, el proyecto y el grupo de pago';
+    return;
+  }
   const amountCents = parseUsd(form.amount);
   if (amountCents === null || amountCents === 0) {
     formError.value = 'Escribe un monto válido, por ejemplo 150 o 150.50';
@@ -242,7 +259,12 @@ onMounted(load);
     <template v-if="action.type === 'end'">
       <label class="field">
         Hasta
-        <input v-model="actionForm.endDate" type="date" :min="action.assignment.startDate" />
+        <input
+          v-model="actionForm.endDate"
+          type="date"
+          :min="action.assignment.startDate"
+          :max="action.assignment.project.endDate"
+        />
         <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
       </label>
     </template>
@@ -257,7 +279,7 @@ onMounted(load);
           v-model="actionForm.effectiveDate"
           type="date"
           required
-          :min="action.assignment.startDate"
+          :min="nextDay(action.assignment.startDate)"
           :max="action.assignment.effectiveEndDate"
         />
       </label>
@@ -328,8 +350,15 @@ onMounted(load);
           </td>
           <td>{{ status(assignment) }}</td>
           <td v-if="canManage">
-            <div v-if="status(assignment) !== 'Finalizada'" class="actions">
-              <button type="button" class="button" @click="openAction('amount', assignment)">Monto</button>
+            <div class="actions">
+              <button
+                v-if="status(assignment) !== 'Finalizada' && canChangeAmount(assignment)"
+                type="button"
+                class="button"
+                @click="openAction('amount', assignment)"
+              >
+                Monto
+              </button>
               <button type="button" class="button" @click="openAction('end', assignment)">Fecha de fin</button>
             </div>
           </td>

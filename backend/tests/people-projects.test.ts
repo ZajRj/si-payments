@@ -69,6 +69,20 @@ describe('personas', () => {
     await generator.post('/api/people').send({ idNumber: 'V-30111223', name: 'Mal email', email: 'no' }).expect(400);
   });
 
+  it('una misma cédula escrita de otra forma no crea otra persona', async () => {
+    const res = await generator.post('/api/people').send({ idNumber: 'V-30.999.111', name: 'Con puntos' }).expect(201);
+    expect(res.body.person.idNumber).toBe('V-30999111');
+    await generator.post('/api/people').send({ idNumber: 'V-030999111', name: 'Con cero' }).expect(409);
+  });
+
+  it('guarda los opcionales vacíos como null', async () => {
+    const res = await generator
+      .post('/api/people')
+      .send({ idNumber: 'V-30999222', name: 'Opcionales', phone: '   ', email: '' })
+      .expect(201);
+    expect(res.body.person).toMatchObject({ phone: null, email: null });
+  });
+
   it('busca por nombre o cédula', async () => {
     const res = await generator.get('/api/people').query({ search: 'Microalgas' }).expect(200);
     expect(res.body.people).toEqual([]);
@@ -200,9 +214,14 @@ describe('asignaciones', () => {
     await generator.patch(`/api/projects/${projectId}`).send({ active: false }).expect(409);
 
     // Una vez cerrada en el pasado, ya no está vigente.
-    await generator.patch(`/api/assignments/${created.body.assignment.id}`).send({ endDate: '2026-01-31' }).expect(200);
+    const assignmentId = created.body.assignment.id;
+    await generator.patch(`/api/assignments/${assignmentId}`).send({ endDate: '2026-01-31' }).expect(200);
     await generator.patch(`/api/people/${personId}`).send({ active: false }).expect(200);
     await generator.patch(`/api/projects/${projectId}`).send({ active: false }).expect(200);
+
+    // Y no se puede reabrir con la persona y el proyecto inactivos, pero sí acortar en el pasado.
+    await generator.patch(`/api/assignments/${assignmentId}`).send({ endDate: null }).expect(409);
+    await generator.patch(`/api/assignments/${assignmentId}`).send({ endDate: '2026-01-15' }).expect(200);
   });
 
   it('el seed carga datos de ejemplo coherentes', async () => {

@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { formatDateOnly, todayUtc } from '../../lib/dates.js';
+import { formatDateOnly, businessToday } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { isUniqueViolation } from '../../lib/prisma-errors.js';
@@ -74,7 +74,7 @@ export async function updateProject(actorId: number, id: number, data: UpdatePro
       await assertAssignmentsFit(tx, id, startDate, endDate);
 
       if (current.active && data.active === false) {
-        const open = await tx.assignment.count({ where: { projectId: id, ...openAssignmentWhere(todayUtc()) } });
+        const open = await tx.assignment.count({ where: { projectId: id, ...openAssignmentWhere(businessToday()) } });
         if (open > 0) {
           throw new HttpError(
             409,

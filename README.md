@@ -149,7 +149,16 @@ Los períodos son consecutivos, sin huecos, y ambos extremos son inclusivos. El 
 
 El primer período empieza en la fecha que se indique y cierra en el siguiente corte, por lo que puede ser más corto. Las siguientes generaciones continúan desde el día posterior al último corte. Cambiar la periodicidad o el corte de un grupo solo afecta a los períodos que se generen después. Para corregir un corte se puede eliminar el último período y volver a generarlo.
 
+En un grupo quincenal la segunda quincena va hasta fin de mes, así que su largo cambia según el mes (del 16 al 28 de febrero son 13 días; del 16 al 31 de enero, 16). El prorrateo debe usar los días reales de cada período.
+
 Las fechas sin hora se guardan a medianoche UTC para que el conteo de días, que usará el prorrateo, no dependa de la zona horaria del servidor.
+
+### Zona horaria y nombres
+
+- **Zona horaria del negocio:** `America/Caracas` ([backend/src/lib/dates.ts](backend/src/lib/dates.ts)). Define qué día es "hoy" (por ejemplo, para saber si una asignación sigue vigente) y cómo se interpretan los filtros por fecha de la auditoría, aunque el servidor corra en UTC.
+- **Nombres sin duplicados:** los nombres de áreas y grupos de pago no se repiten aunque cambien mayúsculas o acentos ("Física" y "fisica" son el mismo).
+- **Desactivación:** no se puede desactivar un área con proyectos activos ni un grupo de pago con asignaciones vigentes.
+- **Mensajes de validación:** se devuelven en español ([backend/src/lib/zod-es.ts](backend/src/lib/zod-es.ts)).
 
 ## Personas, proyectos y asignaciones
 
@@ -157,7 +166,7 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 
 | Entidad | Qué es |
 |---|---|
-| Persona | Beneficiario que cobra, sin usuario en el sistema. La cédula se guarda como `V-12345678` o `E-12345678` y no se repite. |
+| Persona | Beneficiario que cobra, sin usuario en el sistema. La cédula se guarda como `V-12345678` o `E-12345678` y no se repite: `v12.345.678` o `V-012345678` se normalizan a la misma. Teléfono y email son opcionales; vacíos se guardan como `null`. |
 | Proyecto | Código único, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). |
 | Asignación | Persona × proyecto × grupo de pago, con un monto en USD por cada período completo y fechas desde y hasta. Sin fecha hasta, dura lo que dure el proyecto. |
 
@@ -167,7 +176,8 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 - **Dentro de la vigencia:** una asignación debe empezar y terminar dentro de la vigencia de su proyecto. Por lo mismo, no se puede acortar la vigencia de un proyecto si deja asignaciones fuera.
 - **Sin solapamientos:** una persona no puede tener dos asignaciones del mismo proyecto y grupo de pago con días en común, porque se le causaría dos veces el mismo período.
 - **El monto no se edita:** un cambio de monto (`POST /api/assignments/:id/amount-change`) cierra la asignación el día anterior y crea otra desde la fecha indicada, en una sola transacción. Así la causación sabe qué monto correspondía a cada día y queda el historial. De una asignación solo se puede cambiar la fecha de fin.
-- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. No se crean asignaciones con personas, proyectos o grupos de pago inactivos.
+- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
+- **Límite conocido:** el control de solapamientos se hace en el servicio, no con una restricción de la base de datos. Con SQLite las escrituras se serializan, así que en la práctica no hay carreras.
 
 ## Tests
 

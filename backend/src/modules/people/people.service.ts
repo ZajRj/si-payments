@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { todayUtc } from '../../lib/dates.js';
+import { businessToday } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { isUniqueViolation } from '../../lib/prisma-errors.js';
@@ -44,7 +44,7 @@ export async function updatePerson(actorId: number, id: number, data: Partial<Pe
       }
 
       if (before.active && data.active === false) {
-        const open = await tx.assignment.count({ where: { personId: id, ...openAssignmentWhere(todayUtc()) } });
+        const open = await tx.assignment.count({ where: { personId: id, ...openAssignmentWhere(businessToday()) } });
         if (open > 0) {
           throw new HttpError(
             409,

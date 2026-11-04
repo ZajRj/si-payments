@@ -1,8 +1,11 @@
+import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { addDays, formatDateOnly } from '../../lib/dates.js';
+import { addDays, businessToday, formatDateOnly } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
+import { sameName } from '../../lib/names.js';
 import { prisma } from '../../lib/prisma.js';
 import { isUniqueViolation } from '../../lib/prisma-errors.js';
+import { openAssignmentWhere } from '../assignments/open-assignments.js';
 import { buildPeriods, normalizeRule, toPeriodDto, type Frequency } from './periods.js';
 
 type CreateGroupInput = { name: string; frequency: Frequency; cutoffDay?: number | null };
@@ -22,6 +25,7 @@ export async function createPaymentGroup(actorId: number, { name, frequency, cut
 
   try {
     return await prisma.$transaction(async (tx) => {
+      await assertNameAvailable(tx, name);
       const group = await tx.paymentGroup.create({ data: { name, ...rule } });
       await audit(tx, { userId: actorId, action: 'CREATE', entity: 'PaymentGroup', entityId: group.id, after: group });
       return group;
@@ -35,6 +39,19 @@ export async function updatePaymentGroup(actorId: number, id: number, data: Upda
   try {
     return await prisma.$transaction(async (tx) => {
       const before = await findGroupOrThrow(tx, id);
+      if (data.name !== undefined) {
+        await assertNameAvailable(tx, data.name, id);
+      }
+      if (before.active && data.active === false) {
+        const open = await tx.assignment.count({ where: { paymentGroupId: id, ...openAssignmentWhere(businessToday()) } });
+        if (open > 0) {
+          throw new HttpError(
+            409,
+            'PAYMENT_GROUP_HAS_OPEN_ASSIGNMENTS',
+            'El grupo de pago tiene asignaciones vigentes. Ciérralas antes de desactivarlo',
+          );
+        }
+      }
 
       // Al cambiar la periodicidad sin indicar corte, se aplica el corte por defecto de la nueva periodicidad.
       const frequency = data.frequency ?? (before.frequency as Frequency);
@@ -130,8 +147,17 @@ async function findGroupOrThrow(client: Pick<typeof prisma, 'paymentGroup'>, id:
   return group;
 }
 
+async function assertNameAvailable(tx: Prisma.TransactionClient, name: string, excludeId?: number) {
+  const groups = await tx.paymentGroup.findMany({ select: { id: true, name: true } });
+  if (groups.some((group) => group.id !== excludeId && sameName(group.name, name))) {
+    throw nameTaken();
+  }
+}
+
+function nameTaken() {
+  return new HttpError(409, 'PAYMENT_GROUP_NAME_TAKEN', 'Ya existe un grupo de pago con ese nombre');
+}
+
 function translateError(error: unknown) {
-  return isUniqueViolation(error)
-    ? new HttpError(409, 'PAYMENT_GROUP_NAME_TAKEN', 'Ya existe un grupo de pago con ese nombre')
-    : error;
+  return isUniqueViolation(error) ? nameTaken() : error;
 }

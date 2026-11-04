@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Prisma } from '../../generated/prisma/client.js';
-import { addDays, dateOnlySchema } from '../../lib/dates.js';
+import { addDays, dateOnlySchema, startOfBusinessDay } from '../../lib/dates.js';
+import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { requirePermission } from '../../middleware/authorize.js';
@@ -22,13 +23,19 @@ export const auditRouter = Router();
 
 auditRouter.get('/', authenticate, requirePermission(PERMISSIONS.AUDIT_READ), async (req, res) => {
   const { entity, entityId, userId, from, to, page } = querySchema.parse(req.query);
+  if (from && to && from.getTime() > to.getTime()) {
+    throw new HttpError(400, 'INVALID_RANGE', 'La fecha "desde" no puede ser posterior a la fecha "hasta"');
+  }
 
   const where: Prisma.AuditLogWhereInput = {
     entity,
     entityId,
     userId,
-    // `to` incluye todo ese día.
-    createdAt: { gte: from, lt: to ? addDays(to, 1) : undefined },
+    // Los días se interpretan en la zona del negocio, y `to` incluye todo ese día.
+    createdAt: {
+      gte: from ? startOfBusinessDay(from) : undefined,
+      lt: to ? startOfBusinessDay(addDays(to, 1)) : undefined,
+    },
   };
 
   const [total, rows] = await prisma.$transaction([

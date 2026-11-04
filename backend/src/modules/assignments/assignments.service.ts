@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { addDays, formatDateOnly, todayUtc } from '../../lib/dates.js';
+import { addDays, formatDateOnly, businessToday } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { openAssignmentWhere } from './open-assignments.js';
@@ -32,7 +32,7 @@ type AssignmentRecord = Prisma.AssignmentGetPayload<{ include: typeof assignment
 function toAssignmentDto({ startDate, endDate, project, ...assignment }: AssignmentRecord) {
   return {
     ...assignment,
-    project: { id: project.id, code: project.code, name: project.name },
+    project: { id: project.id, code: project.code, name: project.name, endDate: formatDateOnly(project.endDate) },
     startDate: formatDateOnly(startDate),
     endDate: endDate ? formatDateOnly(endDate) : null,
     // Sin fecha de fin, la asignación dura hasta el fin de la vigencia del proyecto.
@@ -45,7 +45,7 @@ export async function listAssignments({ personId, projectId, paymentGroupId, ope
     personId,
     projectId,
     paymentGroupId,
-    ...(openOnly ? openAssignmentWhere(todayUtc()) : {}),
+    ...(openOnly ? openAssignmentWhere(businessToday()) : {}),
   };
   const assignments = await prisma.assignment.findMany({
     where,
@@ -79,6 +79,12 @@ export async function updateAssignmentEndDate(actorId: number, id: number, endDa
   return prisma.$transaction(async (tx) => {
     const current = await findAssignmentOrThrow(tx, id);
     const project = await tx.project.findUniqueOrThrow({ where: { id: current.projectId } });
+
+    // Si la asignación queda vigente, sus partes deben seguir activas: no se reabre
+    // una asignación de una persona, proyecto o grupo de pago desactivado.
+    if ((endDate ?? project.endDate).getTime() >= businessToday().getTime()) {
+      await loadParticipants(tx, current);
+    }
 
     assertWithinProject(project, current.startDate, endDate);
     await assertNoOverlap(tx, { ...current, endDate }, project.endDate, id);

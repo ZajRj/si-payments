@@ -4,7 +4,7 @@ import type { Frequency } from './payment-groups';
 export type Assignment = {
   id: number;
   person: { id: number; idNumber: string; name: string };
-  project: { id: number; code: string; name: string };
+  project: { id: number; code: string; name: string; endDate: string };
   paymentGroup: { id: number; name: string; frequency: Frequency };
   amountCents: number;
   startDate: string;

@@ -6,3 +6,12 @@ export const emailSchema = z.string().trim().toLowerCase().pipe(z.email());
 export const passwordSchema = z.string().min(8).max(72);
 
 export const idParamSchema = z.coerce.number().int().positive();
+
+// En los campos opcionales, un texto vacío o solo con espacios se guarda como null.
+const emptyToNull = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? null : value);
+
+export function nullableTextSchema(max: number) {
+  return z.preprocess(emptyToNull, z.string().trim().max(max).nullable());
+}
+
+export const nullableEmailSchema = z.preprocess(emptyToNull, emailSchema.nullable());
