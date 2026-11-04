@@ -15,6 +15,10 @@ export function formatDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+export function todayUtc(): Date {
+  return parseDateOnly(new Date().toISOString().slice(0, 10))!;
+}
+
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
 }

@@ -7,4 +7,9 @@ export const PERMISSIONS = {
   CATALOGS_READ: 'catalogs:read',
   CATALOGS_MANAGE: 'catalogs:manage',
   AUDIT_READ: 'audit:read',
+  PEOPLE_READ: 'people:read',
+  PEOPLE_MANAGE: 'people:manage',
+  PROJECTS_READ: 'projects:read',
+  PROJECTS_MANAGE: 'projects:manage',
+  ASSIGNMENTS_MANAGE: 'assignments:manage',
 } as const;
