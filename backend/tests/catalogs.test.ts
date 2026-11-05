@@ -28,6 +28,9 @@ describe('áreas', () => {
     const id = created.body.area.id;
 
     await admin.post('/api/areas').send({ name: 'Geología' }).expect(409);
+    // Tampoco con otra capitalización o sin acentos.
+    await admin.post('/api/areas').send({ name: 'geologia' }).expect(409);
+    await admin.post('/api/areas').send({ name: 'FÍSICA' }).expect(409);
     await admin.patch(`/api/areas/${id}`).send({ active: false }).expect(200);
 
     const [update, create] = await auditEntries(admin, 'Area', id);
@@ -37,6 +40,31 @@ describe('áreas', () => {
       before: { active: true },
       after: { active: false },
       user: { email: 'admin@example.com' },
+    });
+  });
+});
+
+describe('reglas de desactivación de catálogos', () => {
+  it('no desactiva un área con proyectos activos ni un grupo con asignaciones vigentes', async () => {
+    const admin = await loginAs('admin@example.com');
+    const areas = (await admin.get('/api/areas').expect(200)).body.areas;
+    const physics = areas.find((area: { name: string }) => area.name === 'Física');
+    await admin.patch(`/api/areas/${physics.id}`).send({ active: false }).expect(409);
+
+    const groups = (await admin.get('/api/payment-groups').expect(200)).body.paymentGroups;
+    const monthly = groups.find((group: { name: string }) => group.name === 'Mensual');
+    await admin.patch(`/api/payment-groups/${monthly.id}`).send({ active: false }).expect(409);
+    await admin.post('/api/payment-groups').send({ name: 'mensual', frequency: 'MONTHLY' }).expect(409);
+  });
+});
+
+describe('mensajes de validación', () => {
+  it('se devuelven en español', async () => {
+    const admin = await loginAs('admin@example.com');
+    const res = await admin.post('/api/payment-groups').send({ name: ' ', frequency: 'MONTHLY', cutoffDay: 1.5 }).expect(400);
+    expect(res.body.error.details).toEqual({
+      name: ['Este campo es obligatorio'],
+      cutoffDay: ['Debe ser un número entero'],
     });
   });
 });
@@ -142,6 +170,11 @@ describe('parámetros', () => {
 });
 
 describe('log de auditoría', () => {
+  it('rechaza un rango de fechas invertido', async () => {
+    const admin = await loginAs('admin@example.com');
+    await admin.get('/api/audit-log').query({ from: '2026-05-02', to: '2026-05-01' }).expect(400);
+  });
+
   it('solo el administrador lo consulta', async () => {
     await request(app).get('/api/audit-log').expect(401);
     for (const email of ['generador@example.com', 'receptor@example.com']) {

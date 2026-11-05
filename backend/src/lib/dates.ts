@@ -15,6 +15,35 @@ export function formatDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+// Zona horaria del negocio: define qué día es "hoy" y cómo se interpretan los filtros por fecha,
+// sin importar la zona horaria del servidor (en Docker suele ser UTC).
+export const BUSINESS_TIME_ZONE = 'America/Caracas';
+
+const businessDateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: BUSINESS_TIME_ZONE });
+const businessClockFormat = new Intl.DateTimeFormat('en-US', {
+  timeZone: BUSINESS_TIME_ZONE,
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+// El día de hoy en la zona del negocio, como fecha sin hora.
+export function businessToday(): Date {
+  return parseDateOnly(businessDateFormat.format(new Date()))!;
+}
+
+// Instante en que empieza el día `date` en la zona del negocio. Sirve para filtrar marcas de tiempo
+// (como createdAt) por día local: 2026-11-03 en Caracas empieza a las 04:00 UTC.
+export function startOfBusinessDay(date: Date): Date {
+  const parts = Object.fromEntries(businessClockFormat.formatToParts(date).map(({ type, value }) => [type, value]));
+  const wallClockAsUtc = Date.UTC(+parts.year!, +parts.month! - 1, +parts.day!, +parts.hour!, +parts.minute!, +parts.second!);
+  return new Date(date.getTime() - (wallClockAsUtc - date.getTime()));
+}
+
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
 }

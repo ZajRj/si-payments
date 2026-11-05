@@ -76,23 +76,25 @@ model Setting {
 }
 
 model Area {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
 }
 
 model PaymentGroup {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
   // WEEKLY, BIWEEKLY o MONTHLY. El significado de cutoffDay depende de la periodicidad.
-  frequency String
-  cutoffDay Int?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  periods   Period[]
+  frequency   String
+  cutoffDay   Int?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  periods     Period[]
+  assignments Assignment[]
 }
 
 // Fechas sin hora, guardadas a medianoche UTC. Ambos extremos son inclusivos.
@@ -105,4 +107,59 @@ model Period {
   createdAt      DateTime     @default(now())
 
   @@unique([paymentGroupId, startDate])
+}
+
+// Beneficiario: cobra asignaciones, pero no tiene usuario en el sistema.
+model Person {
+  id          Int          @id @default(autoincrement())
+  idNumber    String       @unique
+  name        String
+  phone       String?
+  email       String?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  assignments Assignment[]
+}
+
+model Project {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  name        String
+  areaId      Int
+  area        Area         @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  // INTERNAL o EXTERNAL.
+  scope       String
+  // Vigencia, con ambos extremos inclusivos.
+  startDate   DateTime
+  endDate     DateTime
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  assignments Assignment[]
+
+  @@index([areaId])
+}
+
+// El monto no se modifica: un cambio de monto cierra la asignación y abre otra,
+// para que la causación sepa qué monto correspondía a cada día.
+model Assignment {
+  id             Int          @id @default(autoincrement())
+  personId       Int
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  projectId      Int
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  paymentGroupId Int
+  paymentGroup   PaymentGroup @relation(fields: [paymentGroupId], references: [id], onDelete: Restrict)
+  // Monto en centavos de USD por cada período completo.
+  amountCents    Int
+  startDate      DateTime
+  // Si es null, la asignación dura hasta el fin de la vigencia del proyecto.
+  endDate        DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([personId])
+  @@index([projectId])
+  @@index([paymentGroupId])
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateOnly, parseDateOnly } from '../src/lib/dates.js';
+import { formatDateOnly, parseDateOnly, startOfBusinessDay } from '../src/lib/dates.js';
 import { buildPeriods, normalizeRule, periodDays, type PeriodRule } from '../src/modules/payment-groups/periods.js';
 
 const date = (value: string) => parseDateOnly(value)!;
@@ -15,6 +15,10 @@ describe('fechas', () => {
     expect(parseDateOnly('2026-02-30')).toBeNull();
     expect(parseDateOnly('2026-2-3')).toBeNull();
     expect(parseDateOnly('2028-02-29')).not.toBeNull();
+  });
+
+  it('el día de negocio empieza a medianoche de Caracas (UTC-4)', () => {
+    expect(startOfBusinessDay(date('2026-11-03')).toISOString()).toBe('2026-11-03T04:00:00.000Z');
   });
 });
 

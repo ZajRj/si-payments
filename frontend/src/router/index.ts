@@ -43,6 +43,24 @@ export const router = createRouter({
           meta: { navLabel: 'Roles y permisos', permission: PERMISSIONS.ROLES_READ },
         },
         {
+          path: 'personas',
+          name: 'people',
+          component: () => import('@/views/PeopleView.vue'),
+          meta: { navLabel: 'Personas', permission: PERMISSIONS.PEOPLE_READ },
+        },
+        {
+          path: 'proyectos',
+          name: 'projects',
+          component: () => import('@/views/ProjectsView.vue'),
+          meta: { navLabel: 'Proyectos', permission: PERMISSIONS.PROJECTS_READ },
+        },
+        {
+          path: 'asignaciones',
+          name: 'assignments',
+          component: () => import('@/views/AssignmentsView.vue'),
+          meta: { navLabel: 'Asignaciones', permission: PERMISSIONS.PROJECTS_READ },
+        },
+        {
           path: 'areas',
           name: 'areas',
           component: () => import('@/views/AreasView.vue'),

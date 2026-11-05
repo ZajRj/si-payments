@@ -29,8 +29,10 @@ async function save(setting: Setting) {
   savedKey.value = null;
   saveError.value = null;
   try {
-    await updateSetting(setting.key, values.value[setting.key] ?? '');
-    setting.value = values.value[setting.key] ?? '';
+    // El backend recorta los espacios: se usa el valor guardado para que el formulario coincida.
+    const saved = await updateSetting(setting.key, values.value[setting.key] ?? '');
+    setting.value = saved.setting.value;
+    values.value[setting.key] = saved.setting.value;
     savedKey.value = setting.key;
   } catch (e) {
     saveError.value = { key: setting.key, message: errorMessage(e) };

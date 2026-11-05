@@ -9,6 +9,9 @@ const ENTITIES: Record<string, string> = {
   Area: 'Áreas',
   PaymentGroup: 'Grupos de pago',
   Period: 'Períodos',
+  Person: 'Personas',
+  Project: 'Proyectos',
+  Assignment: 'Asignaciones',
 };
 
 const ACTIONS: Record<AuditEntry['action'], string> = {

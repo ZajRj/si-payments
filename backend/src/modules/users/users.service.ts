@@ -42,21 +42,21 @@ export async function createUser(actorId: number, { password, ...data }: CreateU
 }
 
 export async function updateUser(actorId: number, id: number, { password, ...data }: UpdateUserInput) {
-  const current = await prisma.user.findUnique({ where: { id }, select: publicUserSelect });
-  if (!current) {
-    throw new HttpError(404, 'USER_NOT_FOUND', 'Usuario no encontrado');
-  }
-
-  // Como nadie puede quitarse su propio acceso, siempre queda al menos un administrador activo.
-  const changesOwnRole = data.roleId !== undefined && data.roleId !== current.role.id;
-  if (id === actorId && (data.active === false || changesOwnRole)) {
-    throw new HttpError(409, 'SELF_LOCKOUT', 'No puedes cambiar tu propio rol ni desactivar tu propia cuenta');
-  }
-
   const passwordHash = password ? await bcrypt.hash(password, 10) : undefined;
 
   try {
     return await prisma.$transaction(async (tx) => {
+      const current = await tx.user.findUnique({ where: { id }, select: publicUserSelect });
+      if (!current) {
+        throw new HttpError(404, 'USER_NOT_FOUND', 'Usuario no encontrado');
+      }
+
+      // Como nadie puede quitarse su propio acceso, siempre queda al menos un administrador activo.
+      const changesOwnRole = data.roleId !== undefined && data.roleId !== current.role.id;
+      if (id === actorId && (data.active === false || changesOwnRole)) {
+        throw new HttpError(409, 'SELF_LOCKOUT', 'No puedes cambiar tu propio rol ni desactivar tu propia cuenta');
+      }
+
       const user = await tx.user.update({ where: { id }, data: { ...data, passwordHash }, select: publicUserSelect });
       // El hash nunca se guarda en la auditoría; solo se deja constancia del cambio de contraseña.
       const after = passwordHash ? { ...user, passwordChanged: true } : user;
