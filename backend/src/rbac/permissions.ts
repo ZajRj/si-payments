@@ -3,6 +3,7 @@ export const PERMISSIONS = {
   USERS_MANAGE: 'users:manage',
   ROLES_READ: 'roles:read',
   SETTINGS_MANAGE: 'settings:manage',
+  CATALOGS_READ: 'catalogs:read',
   CATALOGS_MANAGE: 'catalogs:manage',
   AUDIT_READ: 'audit:read',
   PEOPLE_MANAGE: 'people:manage',
@@ -24,7 +25,8 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'users:manage': 'Crear y modificar usuarios',
   'roles:read': 'Consultar roles y permisos',
   'settings:manage': 'Gestionar parámetros del sistema',
-  'catalogs:manage': 'Gestionar catálogos y grupos de pago',
+  'catalogs:read': 'Consultar catálogos, grupos de pago y períodos',
+  'catalogs:manage': 'Gestionar catálogos, grupos de pago y períodos',
   'audit:read': 'Consultar el log de auditoría',
   'people:manage': 'Gestionar personas (beneficiarios)',
   'projects:manage': 'Gestionar proyectos',
@@ -53,12 +55,21 @@ export const ROLES: Record<RoleCode, { name: string; description: string; permis
   ADMIN: {
     name: 'Administrador del Sistema',
     description: 'Gestiona usuarios, parámetros y catálogos. No participa en operaciones de dinero.',
-    permissions: [P.USERS_READ, P.USERS_MANAGE, P.ROLES_READ, P.SETTINGS_MANAGE, P.CATALOGS_MANAGE, P.AUDIT_READ],
+    permissions: [
+      P.USERS_READ,
+      P.USERS_MANAGE,
+      P.ROLES_READ,
+      P.SETTINGS_MANAGE,
+      P.CATALOGS_READ,
+      P.CATALOGS_MANAGE,
+      P.AUDIT_READ,
+    ],
   },
   PAYROLL_GENERATOR: {
     name: 'Generador de Nómina',
     description: 'Gestiona proyectos, asignaciones y personas. Genera la causación y crea las solicitudes de pago.',
     permissions: [
+      P.CATALOGS_READ,
       P.PEOPLE_MANAGE,
       P.PROJECTS_MANAGE,
       P.ASSIGNMENTS_MANAGE,
@@ -71,6 +82,12 @@ export const ROLES: Record<RoleCode, { name: string; description: string; permis
   PAYROLL_RECEIVER: {
     name: 'Receptor de Nómina',
     description: 'Recibe, aprueba o rechaza las solicitudes de pago y registra la entrega de fondos.',
-    permissions: [P.PAYMENT_REQUESTS_DECIDE, P.PAYMENTS_REGISTER, P.PETTY_CASH_MANAGE, P.REPORTS_READ],
+    permissions: [
+      P.CATALOGS_READ,
+      P.PAYMENT_REQUESTS_DECIDE,
+      P.PAYMENTS_REGISTER,
+      P.PETTY_CASH_MANAGE,
+      P.REPORTS_READ,
+    ],
   },
 };

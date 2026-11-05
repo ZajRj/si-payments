@@ -10,15 +10,16 @@ datasource db {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
+  id           Int        @id @default(autoincrement())
+  email        String     @unique
   name         String
   passwordHash String
-  active       Boolean  @default(true)
+  active       Boolean    @default(true)
   roleId       Int
-  role         Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  auditEntries AuditLog[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   @@index([roleId])
 }
@@ -47,4 +48,61 @@ model RolePermission {
 
   @@id([roleId, permissionId])
   @@index([permissionId])
+}
+
+// Solo inserción: los triggers de la migración impiden modificar o borrar registros.
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  action    String
+  entity    String
+  entityId  String
+  before    String?
+  after     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+// Las claves válidas se definen en src/modules/settings/settings.definitions.ts.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Area {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentGroup {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  // WEEKLY, BIWEEKLY o MONTHLY. El significado de cutoffDay depende de la periodicidad.
+  frequency String
+  cutoffDay Int?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  periods   Period[]
+}
+
+// Fechas sin hora, guardadas a medianoche UTC. Ambos extremos son inclusivos.
+model Period {
+  id             Int          @id @default(autoincrement())
+  paymentGroupId Int
+  paymentGroup   PaymentGroup @relation(fields: [paymentGroupId], references: [id], onDelete: Restrict)
+  startDate      DateTime
+  endDate        DateTime
+  createdAt      DateTime     @default(now())
+
+  @@unique([paymentGroupId, startDate])
 }

@@ -1,18 +1,11 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/prisma.js';
 import { PERMISSIONS, ROLE_CODES, ROLES } from '../src/rbac/permissions.js';
+import { app, loginAs } from './helpers.js';
 import { testEnv } from './test-env.js';
 
-const app = createApp();
 const PASSWORD = testEnv.SEED_USER_PASSWORD;
-
-async function loginAs(email: string, password = PASSWORD) {
-  const agent = request.agent(app);
-  await agent.post('/api/auth/login').send({ email, password }).expect(200);
-  return agent;
-}
 
 const roleId = async (code: string) => (await prisma.role.findUniqueOrThrow({ where: { code } })).id;
 

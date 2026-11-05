@@ -115,6 +115,10 @@ code {
   margin-bottom: 1rem;
 }
 
+.section-gap {
+  margin-top: 1rem;
+}
+
 .login {
   display: grid;
   place-items: center;
@@ -175,6 +179,8 @@ code {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
 }
 
@@ -203,6 +209,12 @@ code {
 .error {
   color: var(--danger);
   margin: 0;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
 }
 
 .tags {
@@ -252,6 +264,22 @@ tbody th {
 .permission-code {
   display: block;
   color: var(--muted);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.old-value {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 .matrix-cell {
