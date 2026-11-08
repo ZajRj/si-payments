@@ -4,6 +4,7 @@ import { formatDateOnly, businessToday } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { isUniqueViolation } from '../../lib/prisma-errors.js';
+import { assertAccrualsUnaffected } from '../accruals/accruals.service.js';
 import { openAssignmentWhere } from '../assignments/open-assignments.js';
 
 export const SCOPES = ['INTERNAL', 'EXTERNAL'] as const;
@@ -72,6 +73,14 @@ export async function updateProject(actorId: number, id: number, data: UpdatePro
       const endDate = data.endDate ?? current.endDate;
       assertValidRange(startDate, endDate);
       await assertAssignmentsFit(tx, id, startDate, endDate);
+
+      // Las asignaciones sin fecha de fin terminan con el proyecto: mover su fin no puede alterar períodos causados.
+      if (endDate.getTime() !== current.endDate.getTime()) {
+        const followProject = await tx.assignment.findMany({ where: { projectId: id, endDate: null } });
+        for (const assignment of followProject) {
+          await assertAccrualsUnaffected(tx, assignment, endDate);
+        }
+      }
 
       if (current.active && data.active === false) {
         const open = await tx.assignment.count({ where: { projectId: id, ...openAssignmentWhere(businessToday()) } });

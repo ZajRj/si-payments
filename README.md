@@ -2,7 +2,7 @@
 
 Proyecto final de Sistemas de Información (Universidad de Carabobo). El enunciado está en [proyecto.md](proyecto.md).
 
-Estado actual: autenticación, RBAC, gestión de usuarios, log de auditoría, parámetros, catálogos (áreas, grupos de pago y períodos), personas, proyectos y asignaciones. Faltan los módulos de causación, pagos, cajas chicas y reportes.
+Estado actual: autenticación, RBAC, gestión de usuarios, log de auditoría, parámetros, catálogos (áreas, grupos de pago y períodos), personas, proyectos, asignaciones, causación con prorrateo, solicitudes de pago con pagos parciales FIFO y cajas chicas. Faltan los reportes y los PDFs.
 
 ## Stack
 
@@ -61,7 +61,8 @@ Si `SEED_USER_PASSWORD` está vacío, el seed solo carga roles y permisos, sin u
 │   │   ├── lib/            # Prisma, auditoría, fechas, errores HTTP, validaciones
 │   │   ├── middleware/     # authenticate, requirePermission, errores
 │   │   ├── modules/        # auth, users, roles, settings, areas, payment-groups, audit,
-│   │   │                   # people, projects, assignments
+│   │   │                   # people, projects, assignments, accruals, payment-requests,
+│   │   │                   # petty-cash
 │   │   └── rbac/           # Permisos y matriz por rol
 │   └── tests/
 └── frontend/
@@ -89,13 +90,14 @@ Los permisos se asignan a los roles, y cada usuario tiene un rol. La matriz est�
 | `catalogs:read` | Sí | Sí | Sí |
 | `people:read`, `projects:read` | — | Sí | Sí |
 | `people:manage`, `projects:manage`, `assignments:manage` | — | Sí | — |
+| `payroll:read`, `petty-cash:read` | — | Sí | Sí |
 | `accruals:generate`, `payment-requests:create` | — | Sí | — |
 | `petty-cash:request` | — | Sí | — |
 | `payment-requests:decide`, `payments:register` | — | — | Sí |
 | `petty-cash:manage` | — | — | Sí |
 | `reports:read` | — | Sí | Sí |
 
-Por ahora, la API aplica `users:*`, `roles:read`, `settings:manage`, `catalogs:*`, `audit:read`, `people:*`, `projects:*` y `assignments:manage`. Los demás permisos quedan definidos para los módulos futuros.
+La API aplica todos los permisos menos `reports:read`, que queda definido para el módulo de reportes.
 
 ### Cómo funciona
 
@@ -179,9 +181,54 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 - **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
 - **Límite conocido:** el control de solapamientos se hace en el servicio, no con una restricción de la base de datos. Con SQLite las escrituras se serializan, así que en la práctica no hay carreras.
 
+## Causación
+
+Pantalla **Causación**. La genera el Generador de Nómina; el Receptor la consulta.
+
+- **Prorrateo:** monto causado = monto por período de la asignación × días activos ÷ días reales del período, redondeado al centavo (la mitad sube). Se calcula con enteros ([proration.ts](backend/src/modules/accruals/proration.ts)). Ejemplo: USD 450 por quincena con inicio el 6 de enero causa 10/15 de 450 = USD 300 en la primera quincena de enero.
+- **Por lote:** `POST /api/accruals/generate` con `periodId` y, opcionalmente, `projectId`. Crea un lote por proyecto con las asignaciones del grupo de pago del período que tengan días activos en él. Solo se causan períodos que ya cerraron (fecha de fin igual o anterior a hoy).
+- **Sin duplicados:** una asignación tiene como máximo una causación vigente por período. Si se agrega una asignación retroactiva o se anula una causación, volver a generar crea un lote complementario solo con lo que falta.
+- **Protección de lo causado:** no se puede cambiar la fecha de fin de una asignación, hacer un cambio de monto ni mover el fin de un proyecto si eso altera los días de un período ya causado. Tampoco se puede eliminar un período con causaciones.
+- **Anulación:** una causación o un lote completo se anulan con motivo (`POST /api/accruals/:id/annul`, `POST /api/accruals/batches/:id/annul`). No se puede anular lo que tiene pagos vigentes o está en una solicitud abierta.
+
+## Solicitudes de pago y pagos
+
+Pantalla **Solicitudes de pago**.
+
+| Estado | Quién | Siguiente |
+|---|---|---|
+| Borrador | Generador la crea con la deuda pendiente de un proyecto | Enviar o cancelar |
+| Enviada | Generador | El Receptor aprueba o rechaza (con motivo); el Generador aún puede cancelarla |
+| Aprobada | Receptor | El Receptor registra la entrega de fondos y la cierra |
+| Cerrada, Rechazada o Cancelada | — | Estados finales |
+
+- **Contenido:** la solicitud incluye las causaciones vigentes del proyecto con saldo que no estén en otra solicitud abierta, cada una con el monto pendiente que tenía al incluirla. Mientras la solicitud está abierta, esas causaciones no entran en otra ni se anulan.
+- **Pagos parciales con FIFO:** cada pago es por persona y puede ser menor a lo pendiente. Se aplica primero a la causación más antigua de la persona en la solicitud ([fifo.ts](backend/src/modules/payment-requests/fifo.ts)) y queda registrado cómo se repartió (`PaymentAllocation`). Cada pago es un recibo individual.
+- **Cierre con saldo:** cerrar una solicitud con saldo pendiente exige un motivo; ese saldo vuelve a la deuda y puede ir en otra solicitud.
+- **Anulación de pagos:** `POST /api/payments/:id/annul` con motivo. El monto vuelve a la deuda de la persona.
+
+## Cajas chicas
+
+Pantalla **Cajas chicas**. El Receptor gestiona las cajas, abre y cierra los meses, aprueba y desembolsa vales. El Generador solicita, cancela y rinde vales.
+
+- **Cajas:** cada caja pertenece a un proyecto activo y se puede reasignar a otro desde la interfaz. No se borran; se desactivan, y solo sin un mes abierto.
+- **Apertura mensual:** el primer mes se elige y necesita un monto inicial. Los siguientes son consecutivos: empiezan con el saldo final del mes anterior (arrastre) más la reposición que se indique. No se abren meses futuros.
+- **Vales:** solicitado → aprobado o rechazado (con motivo) → desembolsado → rendido. Un vale solicitado también se puede cancelar. Aprobar reserva el monto, así que solo se aprueba si el saldo disponible lo cubre.
+- **Rendición:** se indica lo gastado (como máximo lo desembolsado), el número y la fecha del comprobante. Lo no gastado vuelve a la caja.
+- **Cierre:** solo cuando todos los vales del mes terminaron (rendidos, rechazados o cancelados). Saldo final = saldo inicial + reposición − gastado.
+
+## Inmutabilidad
+
+Los registros financieros no se modifican ni se borran: los errores se corrigen con anulaciones que guardan quién, cuándo y por qué. Además de las validaciones del servicio, triggers de la base de datos lo garantizan incluso con SQL directo:
+
+- Causaciones y pagos: no se borran; el único cambio permitido es anularlos una vez, con usuario y motivo.
+- Lotes, renglones de solicitud y aplicaciones de pagos: no se modifican ni se borran.
+- Solicitudes cerradas, rechazadas o canceladas, meses de caja cerrados y vales finalizados: no cambian. Nada de esto se borra.
+- Un trigger impide insertar una segunda causación vigente de la misma asignación en el mismo período.
+
 ## Tests
 
-Los tests cubren autenticación, permisos por rol, revocación de sesiones, segregación de funciones, catálogos, generación de períodos, auditoría, personas, proyectos y asignaciones. Usan una base de datos SQLite propia.
+Los tests cubren autenticación, permisos por rol, revocación de sesiones, segregación de funciones, catálogos, generación de períodos, auditoría, personas, proyectos, asignaciones, prorrateo, causación por lote, solicitudes y pagos FIFO, cajas chicas e inmutabilidad de los registros financieros. Usan una base de datos SQLite propia.
 
 Con Node 24 instalado:
 

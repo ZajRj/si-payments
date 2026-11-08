@@ -21,6 +21,20 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  accrualBatches        AccrualBatch[]     @relation("AccrualBatchCreatedBy")
+  annulledAccruals      Accrual[]          @relation("AccrualAnnulledBy")
+  createdRequests       PaymentRequest[]   @relation("PaymentRequestCreatedBy")
+  decidedRequests       PaymentRequest[]   @relation("PaymentRequestDecidedBy")
+  closedRequests        PaymentRequest[]   @relation("PaymentRequestClosedBy")
+  registeredPayments    Payment[]          @relation("PaymentCreatedBy")
+  annulledPayments      Payment[]          @relation("PaymentAnnulledBy")
+  openedPettyCashMonths PettyCashPeriod[]  @relation("PettyCashPeriodOpenedBy")
+  closedPettyCashMonths PettyCashPeriod[]  @relation("PettyCashPeriodClosedBy")
+  requestedVouchers     PettyCashVoucher[] @relation("VoucherRequestedBy")
+  decidedVouchers       PettyCashVoucher[] @relation("VoucherDecidedBy")
+  disbursedVouchers     PettyCashVoucher[] @relation("VoucherDisbursedBy")
+  settledVouchers       PettyCashVoucher[] @relation("VoucherSettledBy")
+
   @@index([roleId])
 }
 
@@ -99,12 +113,14 @@ model PaymentGroup {
 
 // Fechas sin hora, guardadas a medianoche UTC. Ambos extremos son inclusivos.
 model Period {
-  id             Int          @id @default(autoincrement())
+  id             Int            @id @default(autoincrement())
   paymentGroupId Int
-  paymentGroup   PaymentGroup @relation(fields: [paymentGroupId], references: [id], onDelete: Restrict)
+  paymentGroup   PaymentGroup   @relation(fields: [paymentGroupId], references: [id], onDelete: Restrict)
   startDate      DateTime
   endDate        DateTime
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime       @default(now())
+  accrualBatches AccrualBatch[]
+  accruals       Accrual[]
 
   @@unique([paymentGroupId, startDate])
 }
@@ -120,23 +136,29 @@ model Person {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   assignments Assignment[]
+  accruals    Accrual[]
+  payments    Payment[]
 }
 
 model Project {
-  id          Int          @id @default(autoincrement())
-  code        String       @unique
-  name        String
-  areaId      Int
-  area        Area         @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  id              Int              @id @default(autoincrement())
+  code            String           @unique
+  name            String
+  areaId          Int
+  area            Area             @relation(fields: [areaId], references: [id], onDelete: Restrict)
   // INTERNAL o EXTERNAL.
-  scope       String
+  scope           String
   // Vigencia, con ambos extremos inclusivos.
-  startDate   DateTime
-  endDate     DateTime
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  assignments Assignment[]
+  startDate       DateTime
+  endDate         DateTime
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  assignments     Assignment[]
+  accrualBatches  AccrualBatch[]
+  accruals        Accrual[]
+  paymentRequests PaymentRequest[]
+  pettyCashFunds  PettyCashFund[]
 
   @@index([areaId])
 }
@@ -158,8 +180,222 @@ model Assignment {
   endDate        DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  accruals       Accrual[]
 
   @@index([personId])
   @@index([projectId])
   @@index([paymentGroupId])
+}
+
+// ---------------------------------------------------------------------------
+// Causación. Los registros financieros son inmutables: los triggers de la migración
+// impiden borrarlos y solo permiten anularlos una vez, con motivo.
+// ---------------------------------------------------------------------------
+
+// Lote de causación: agrupa lo causado de un proyecto en un período.
+model AccrualBatch {
+  id          Int       @id @default(autoincrement())
+  projectId   Int
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  periodId    Int
+  period      Period    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  createdById Int
+  createdBy   User      @relation("AccrualBatchCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now())
+  accruals    Accrual[]
+
+  @@index([projectId])
+  @@index([periodId])
+}
+
+// Monto causado de una asignación en un período, prorrateado por días activos.
+// Una asignación tiene como máximo una causación no anulada por período (lo garantiza un trigger).
+model Accrual {
+  id                    Int                  @id @default(autoincrement())
+  batchId               Int
+  batch                 AccrualBatch         @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  assignmentId          Int
+  assignment            Assignment           @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  personId              Int
+  person                Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  projectId             Int
+  project               Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  periodId              Int
+  period                Period               @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  // Copia del monto por período de la asignación y de los días usados en el prorrateo.
+  assignmentAmountCents Int
+  activeDays            Int
+  periodDays            Int
+  // Monto causado: assignmentAmountCents * activeDays / periodDays, redondeado al centavo.
+  amountCents           Int
+  createdAt             DateTime             @default(now())
+  annulledAt            DateTime?
+  annulledById          Int?
+  annulledBy            User?                @relation("AccrualAnnulledBy", fields: [annulledById], references: [id], onDelete: Restrict)
+  annulmentReason       String?
+  requestItems          PaymentRequestItem[]
+  allocations           PaymentAllocation[]
+
+  @@index([batchId])
+  @@index([assignmentId, periodId])
+  @@index([personId])
+  @@index([projectId])
+  @@index([periodId])
+}
+
+// ---------------------------------------------------------------------------
+// Solicitudes de pago y pagos.
+// ---------------------------------------------------------------------------
+
+// DRAFT -> SUBMITTED -> APPROVED o REJECTED; APPROVED -> CLOSED; DRAFT -> CANCELLED.
+// La entrega de fondos (pagos) se registra mientras la solicitud está APPROVED.
+model PaymentRequest {
+  id           Int                  @id @default(autoincrement())
+  projectId    Int
+  project      Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  status       String               @default("DRAFT")
+  notes        String?
+  createdById  Int
+  createdBy    User                 @relation("PaymentRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt    DateTime             @default(now())
+  submittedAt  DateTime?
+  decidedById  Int?
+  decidedBy    User?                @relation("PaymentRequestDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+  decidedAt    DateTime?
+  decisionNote String?
+  closedById   Int?
+  closedBy     User?                @relation("PaymentRequestClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  closedAt     DateTime?
+  closingNote  String?
+  cancelledAt  DateTime?
+  items        PaymentRequestItem[]
+  payments     Payment[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+// Causación incluida en una solicitud, con el monto pendiente que tenía al incluirla.
+model PaymentRequestItem {
+  id             Int            @id @default(autoincrement())
+  requestId      Int
+  request        PaymentRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  accrualId      Int
+  accrual        Accrual        @relation(fields: [accrualId], references: [id], onDelete: Restrict)
+  requestedCents Int
+
+  @@unique([requestId, accrualId])
+  @@index([accrualId])
+}
+
+// Entrega de fondos a una persona: cada pago es un recibo individual. Se reparte FIFO
+// sobre las causaciones pendientes de la persona en la solicitud, de la más antigua a la más nueva.
+model Payment {
+  id              Int                 @id @default(autoincrement())
+  requestId       Int
+  request         PaymentRequest      @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  personId        Int
+  person          Person              @relation(fields: [personId], references: [id], onDelete: Restrict)
+  amountCents     Int
+  paidOn          DateTime
+  reference       String?
+  createdById     Int
+  createdBy       User                @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime            @default(now())
+  annulledAt      DateTime?
+  annulledById    Int?
+  annulledBy      User?               @relation("PaymentAnnulledBy", fields: [annulledById], references: [id], onDelete: Restrict)
+  annulmentReason String?
+  allocations     PaymentAllocation[]
+
+  @@index([requestId])
+  @@index([personId])
+}
+
+model PaymentAllocation {
+  id          Int     @id @default(autoincrement())
+  paymentId   Int
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  accrualId   Int
+  accrual     Accrual @relation(fields: [accrualId], references: [id], onDelete: Restrict)
+  amountCents Int
+
+  @@index([paymentId])
+  @@index([accrualId])
+}
+
+// ---------------------------------------------------------------------------
+// Cajas chicas.
+// ---------------------------------------------------------------------------
+
+model PettyCashFund {
+  id        Int                @id @default(autoincrement())
+  name      String             @unique
+  projectId Int
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  active    Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  periods   PettyCashPeriod[]
+  vouchers  PettyCashVoucher[]
+
+  @@index([projectId])
+}
+
+// Apertura mensual. El saldo inicial es el saldo final del mes anterior (arrastre).
+model PettyCashPeriod {
+  id                  Int                @id @default(autoincrement())
+  fundId              Int
+  fund                PettyCashFund      @relation(fields: [fundId], references: [id], onDelete: Restrict)
+  year                Int
+  month               Int
+  // OPEN o CLOSED.
+  status              String             @default("OPEN")
+  openingBalanceCents Int
+  // Fondos que se agregan a la caja al abrir el mes (reposición).
+  replenishmentCents  Int
+  closingBalanceCents Int?
+  openedById          Int
+  openedBy            User               @relation("PettyCashPeriodOpenedBy", fields: [openedById], references: [id], onDelete: Restrict)
+  openedAt            DateTime           @default(now())
+  closedById          Int?
+  closedBy            User?              @relation("PettyCashPeriodClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  closedAt            DateTime?
+  vouchers            PettyCashVoucher[]
+
+  @@unique([fundId, year, month])
+}
+
+// Vale: REQUESTED -> APPROVED, REJECTED o CANCELLED; APPROVED -> DISBURSED -> SETTLED.
+model PettyCashVoucher {
+  id               Int             @id @default(autoincrement())
+  fundId           Int
+  fund             PettyCashFund   @relation(fields: [fundId], references: [id], onDelete: Restrict)
+  periodId         Int
+  period           PettyCashPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  status           String          @default("REQUESTED")
+  concept          String
+  beneficiary      String
+  amountCents      Int
+  requestedById    Int
+  requestedBy      User            @relation("VoucherRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedAt      DateTime        @default(now())
+  decidedById      Int?
+  decidedBy        User?           @relation("VoucherDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+  decidedAt        DateTime?
+  rejectionReason  String?
+  disbursedById    Int?
+  disbursedBy      User?           @relation("VoucherDisbursedBy", fields: [disbursedById], references: [id], onDelete: Restrict)
+  disbursedAt      DateTime?
+  // Rendición: lo gastado según el comprobante. Lo no gastado vuelve a la caja.
+  settledById      Int?
+  settledBy        User?           @relation("VoucherSettledBy", fields: [settledById], references: [id], onDelete: Restrict)
+  settledAt        DateTime?
+  spentCents       Int?
+  receiptReference String?
+  receiptDate      DateTime?
+  cancelledAt      DateTime?
+
+  @@index([fundId])
+  @@index([periodId])
 }

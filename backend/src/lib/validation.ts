@@ -14,4 +14,7 @@ export function nullableTextSchema(max: number) {
   return z.preprocess(emptyToNull, z.string().trim().max(max).nullable());
 }
 
+// Motivo obligatorio de una anulación, un rechazo o un cierre con saldo pendiente.
+export const reasonSchema = z.string().trim().min(5).max(500);
+
 export const nullableEmailSchema = z.preprocess(emptyToNull, emailSchema.nullable());

@@ -3,6 +3,7 @@ import { audit } from '../../lib/audit.js';
 import { addDays, formatDateOnly, businessToday } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
+import { assertAccrualsUnaffected } from '../accruals/accruals.service.js';
 import { openAssignmentWhere } from './open-assignments.js';
 
 type CreateAssignmentInput = {
@@ -74,7 +75,7 @@ export async function createAssignment(actorId: number, data: CreateAssignmentIn
 }
 
 // Solo se puede cambiar la fecha de fin: el monto y las partes de la asignación no se modifican.
-// TODO(causación): impedir que la nueva fecha deje fuera días ya causados.
+// La nueva fecha no puede alterar días de períodos ya causados.
 export async function updateAssignmentEndDate(actorId: number, id: number, endDate: Date | null) {
   return prisma.$transaction(async (tx) => {
     const current = await findAssignmentOrThrow(tx, id);
@@ -88,6 +89,7 @@ export async function updateAssignmentEndDate(actorId: number, id: number, endDa
 
     assertWithinProject(project, current.startDate, endDate);
     await assertNoOverlap(tx, { ...current, endDate }, project.endDate, id);
+    await assertAccrualsUnaffected(tx, current, endDate ?? project.endDate);
 
     const assignment = toAssignmentDto(
       await tx.assignment.update({ where: { id }, data: { endDate }, include: assignmentInclude }),
@@ -126,6 +128,9 @@ export async function changeAssignmentAmount(
         `La fecha del cambio debe estar entre ${formatDateOnly(addDays(current.startDate, 1))} y ${formatDateOnly(currentEnd)}`,
       );
     }
+
+    // La asignación original se cierra el día anterior: eso no puede alterar períodos ya causados.
+    await assertAccrualsUnaffected(tx, current, addDays(effectiveDate, -1));
 
     const closed = toAssignmentDto(
       await tx.assignment.update({

@@ -61,6 +61,24 @@ export const router = createRouter({
           meta: { navLabel: 'Asignaciones', permission: PERMISSIONS.PROJECTS_READ },
         },
         {
+          path: 'causacion',
+          name: 'accruals',
+          component: () => import('@/views/AccrualsView.vue'),
+          meta: { navLabel: 'Causación', permission: PERMISSIONS.PAYROLL_READ },
+        },
+        {
+          path: 'solicitudes-de-pago',
+          name: 'payment-requests',
+          component: () => import('@/views/PaymentRequestsView.vue'),
+          meta: { navLabel: 'Solicitudes de pago', permission: PERMISSIONS.PAYROLL_READ },
+        },
+        {
+          path: 'cajas-chicas',
+          name: 'petty-cash',
+          component: () => import('@/views/PettyCashView.vue'),
+          meta: { navLabel: 'Cajas chicas', permission: PERMISSIONS.PETTY_CASH_READ },
+        },
+        {
           path: 'areas',
           name: 'areas',
           component: () => import('@/views/AreasView.vue'),
