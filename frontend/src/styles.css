@@ -1,5 +1,6 @@
 :root {
-  color-scheme: light dark;
+  /* Siempre en tema claro, sin importar la configuración del sistema. */
+  color-scheme: light;
   --bg: #f5f6f4;
   --surface: #ffffff;
   --text: #1c2321;
@@ -10,19 +11,6 @@
   --danger: #a4262c;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141917;
-    --surface: #1d2422;
-    --text: #e8ecea;
-    --muted: #a0aaa6;
-    --border: #36403c;
-    --accent: #5cc4a8;
-    --accent-text: #0d1f1a;
-    --danger: #ff8f8f;
-  }
 }
 
 * {
