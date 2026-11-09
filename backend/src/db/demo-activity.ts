@@ -5,6 +5,7 @@ import { annulAccrual, generateAccruals } from '../modules/accruals/accruals.ser
 import {
   annulPayment,
   approveRequest,
+  cancelRequest,
   closeRequest,
   createRequest,
   getRequest,
@@ -133,6 +134,10 @@ async function seedPayroll(generator: number, receiver: number) {
     orderBy: { id: 'desc' },
   });
   if (latest) await annulAccrual(generator, latest.id, 'Semana no laborada por el beneficiario');
+
+  // Una solicitud retirada antes de que la decidan: su deuda queda libre para otra.
+  const withdrawn = await newRequest(generator, 'FIS-002', 'Creada por error, sin el informe de avance');
+  if (withdrawn) await cancelRequest(generator, withdrawn.id);
 
   const biologyQ4 = await newRequest(generator, 'BIO-001', 'Saldo pendiente y nómina de octubre');
   if (biologyQ4) await submitRequest(generator, biologyQ4.id);
