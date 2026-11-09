@@ -2,7 +2,7 @@
 
 Proyecto final de Sistemas de Información (Universidad de Carabobo). El enunciado está en [proyecto.md](proyecto.md).
 
-Estado actual: autenticación, RBAC, gestión de usuarios, log de auditoría, parámetros, catálogos (áreas, grupos de pago y períodos), personas, proyectos, asignaciones, causación con prorrateo, solicitudes de pago con pagos parciales FIFO y cajas chicas. Faltan los reportes y los PDFs.
+Estado actual: autenticación, RBAC, gestión de usuarios, log de auditoría, parámetros, catálogos (áreas, grupos de pago y períodos), personas, proyectos, asignaciones, causación con prorrateo, solicitudes de pago con pagos parciales FIFO, cajas chicas, reportes y PDFs de recibos individuales y solicitudes consolidadas.
 
 ## Stack
 
@@ -62,7 +62,7 @@ Si `SEED_USER_PASSWORD` está vacío, el seed solo carga roles y permisos, sin u
 │   │   ├── middleware/     # authenticate, requirePermission, errores
 │   │   ├── modules/        # auth, users, roles, settings, areas, payment-groups, audit,
 │   │   │                   # people, projects, assignments, accruals, payment-requests,
-│   │   │                   # petty-cash
+│   │   │                   # petty-cash, reports
 │   │   └── rbac/           # Permisos y matriz por rol
 │   └── tests/
 └── frontend/
@@ -97,7 +97,7 @@ Los permisos se asignan a los roles, y cada usuario tiene un rol. La matriz est�
 | `petty-cash:manage` | — | — | Sí |
 | `reports:read` | — | Sí | Sí |
 
-La API aplica todos los permisos menos `reports:read`, que queda definido para el módulo de reportes.
+El Administrador no tiene `reports:read`: no participa en operaciones de dinero, así que tampoco ve los reportes ni los PDFs.
 
 ### Cómo funciona
 
@@ -217,6 +217,25 @@ Pantalla **Cajas chicas**. El Receptor gestiona las cajas, abre y cierra los mes
 - **Rendición:** se indica lo gastado (como máximo lo desembolsado), el número y la fecha del comprobante. Lo no gastado vuelve a la caja.
 - **Cierre:** solo cuando todos los vales del mes terminaron (rendidos, rechazados o cancelados). Saldo final = saldo inicial + reposición − gastado.
 
+## Reportes y PDFs
+
+Pantalla **Reportes**, para el Generador y el Receptor (permiso `reports:read`). Solo leen datos; no escriben en la base de datos.
+
+| Reporte | Endpoint | Qué responde |
+|---|---|---|
+| Saldos | `GET /api/reports/balances?groupBy=person\|project` | Causado, pagado y adeudado por persona o por proyecto, con totales |
+| Pagos | `GET /api/reports/payments` | Cuándo, a quién y por qué proyecto se pagó. Los anulados se listan, pero no suman |
+| Estado de cuenta | `GET /api/reports/people/:id/statement` | Cada causación de la persona con lo pagado, lo adeudado y su estado, más sus pagos |
+
+Todos aceptan `projectId`, `personId`, `areaId`, `from` y `to` (AAAA-MM-DD, inclusivos). Las causaciones se ubican por la fecha de fin de su período y los pagos por su fecha de entrega. En los saldos, lo pagado es lo aplicado a esas causaciones por pagos vigentes, sin importar la fecha del pago.
+
+Los PDFs se generan en el backend con [pdfkit](https://pdfkit.org) y se abren en una pestaña nueva. Llevan el nombre, RIF y dirección de la empresa tomados de los parámetros:
+
+- **Recibo individual** (`GET /api/reports/payments/:id/receipt`): beneficiario, proyecto, solicitud, monto en números y en letras, cómo se aplicó el pago a la deuda (FIFO), el pie de recibo de los parámetros y las firmas de quien entrega y quien recibe. Un recibo anulado sale con la marca ANULADO y el motivo.
+- **Solicitud consolidada** (`GET /api/reports/payment-requests/:id/consolidated`): estado e historial, resumen por persona, detalle por causación, pagos registrados y firmas de quien elabora y quien aprueba. Si no está aprobada, sale con una marca de agua.
+
+En la pantalla **Solicitudes de pago** también hay un botón para cada PDF.
+
 ## Inmutabilidad
 
 Los registros financieros no se modifican ni se borran: los errores se corrigen con anulaciones que guardan quién, cuándo y por qué. Además de las validaciones del servicio, triggers de la base de datos lo garantizan incluso con SQL directo:
@@ -228,7 +247,7 @@ Los registros financieros no se modifican ni se borran: los errores se corrigen 
 
 ## Tests
 
-Los tests cubren autenticación, permisos por rol, revocación de sesiones, segregación de funciones, catálogos, generación de períodos, auditoría, personas, proyectos, asignaciones, prorrateo, causación por lote, solicitudes y pagos FIFO, cajas chicas e inmutabilidad de los registros financieros. Usan una base de datos SQLite propia.
+Los tests cubren autenticación, permisos por rol, revocación de sesiones, segregación de funciones, catálogos, generación de períodos, auditoría, personas, proyectos, asignaciones, prorrateo, causación por lote, solicitudes y pagos FIFO, cajas chicas, reportes, PDFs, montos en letras e inmutabilidad de los registros financieros. Usan una base de datos SQLite propia.
 
 Con Node 24 instalado:
 
