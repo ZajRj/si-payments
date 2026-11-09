@@ -33,7 +33,18 @@ Requisito: Docker con Compose.
 
 4. Abre <http://localhost:8080>.
 
-Al arrancar, el backend aplica las migraciones y ejecuta el seed. El seed carga roles, permisos, las áreas (Física, Química y Biología) y los parámetros. Si `SEED_USER_PASSWORD` tiene valor, también carga los usuarios de prueba, tres grupos de pago de ejemplo con sus períodos de 2026, y personas, proyectos y asignaciones ficticias. Los datos se guardan en el volumen `backend-data`. Para borrarlos y empezar de cero, usa `docker compose down -v`.
+Al arrancar, el backend aplica las migraciones y ejecuta el seed. El seed carga roles, permisos, las áreas (Física, Química y Biología) y los parámetros. Si `SEED_USER_PASSWORD` tiene valor, también carga los usuarios de prueba, tres grupos de pago de ejemplo con sus períodos de 2026, y personas, proyectos y asignaciones ficticias.
+
+En una base sin movimientos, el seed también genera actividad financiera de demostración ([demo-activity.ts](backend/src/db/demo-activity.ts)) con los mismos servicios de la aplicación, a nombre del Generador y el Receptor de prueba. Por eso queda registrada en la auditoría:
+
+- Causaciones de todos los períodos cerrados hasta octubre de 2026, con una anulada.
+- Solicitudes en todos los estados: cerradas, aprobada con un pago parcial, cerrada con saldo pendiente, rechazada, enviada y borrador.
+- Pagos, uno de ellos anulado.
+- Una caja chica con meses cerrados desde agosto, arrastre de saldo, el mes actual abierto y vales en cada estado.
+
+No genera nada con fecha futura y no se ejecuta en los tests.
+
+Los datos se guardan en el volumen `backend-data`. Para borrarlos y empezar de cero, usa `docker compose down -v`.
 
 ### Usuarios de prueba
 

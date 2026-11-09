@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { parseDateOnly } from '../lib/dates.js';
 import { prisma } from '../lib/prisma.js';
+import { seedDemoActivity } from './demo-activity.js';
 import { buildPeriods, normalizeRule, type Frequency } from '../modules/payment-groups/periods.js';
 import { SETTINGS } from '../modules/settings/settings.definitions.js';
 import { PERMISSION_DESCRIPTIONS, ROLE_CODES, ROLES, type Permission, type RoleCode } from '../rbac/permissions.js';
@@ -181,6 +182,8 @@ if (password) {
   await seedDemoUsers(password);
   await seedDemoPaymentGroups();
   await seedDemoProjects();
+  // Los tests parten sin movimientos para poder causar y pagar sus propios datos desde cero.
+  if (process.env.NODE_ENV !== 'test') await seedDemoActivity();
   console.log('Seed: roles, permisos, catálogos y datos de prueba listos.');
 } else {
   console.log('Seed: roles, permisos y catálogos listos. Datos de prueba omitidos (SEED_USER_PASSWORD vacío).');
