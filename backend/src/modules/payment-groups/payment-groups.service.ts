@@ -122,7 +122,7 @@ export async function generatePeriods(actorId: number, groupId: number, { from, 
 }
 
 // Solo se puede quitar el último período, para que la secuencia siga sin huecos y se pueda ajustar un corte.
-// TODO(causación): impedirlo cuando el período tenga causaciones.
+// Un período con causaciones, aunque estén anuladas, ya no se puede quitar.
 export async function deleteLastPeriod(actorId: number, groupId: number) {
   return prisma.$transaction(async (tx) => {
     await findGroupOrThrow(tx, groupId);
@@ -130,6 +130,9 @@ export async function deleteLastPeriod(actorId: number, groupId: number) {
     const last = await tx.period.findFirst({ where: { paymentGroupId: groupId }, orderBy: { startDate: 'desc' } });
     if (!last) {
       throw new HttpError(404, 'PERIOD_NOT_FOUND', 'El grupo no tiene períodos');
+    }
+    if ((await tx.accrualBatch.count({ where: { periodId: last.id } })) > 0) {
+      throw new HttpError(409, 'PERIOD_HAS_ACCRUALS', 'El período tiene causaciones y ya no se puede eliminar');
     }
 
     await tx.period.delete({ where: { id: last.id } });
