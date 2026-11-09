@@ -38,7 +38,7 @@ Al arrancar, el backend aplica las migraciones y ejecuta el seed. El seed carga 
 En una base sin movimientos, el seed también genera actividad financiera de demostración ([demo-activity.ts](backend/src/db/demo-activity.ts)) con los mismos servicios de la aplicación, a nombre del Generador y el Receptor de prueba. Por eso queda registrada en la auditoría:
 
 - Causaciones de todos los períodos cerrados hasta octubre de 2026, con una anulada.
-- Solicitudes en todos los estados: cerradas, aprobada con un pago parcial, cerrada con saldo pendiente, rechazada, enviada y borrador.
+- Solicitudes en todos los estados: cerradas, aprobada con un pago parcial, cerrada con saldo pendiente, rechazada, cancelada, enviada y borrador.
 - Pagos, uno de ellos anulado.
 - Una caja chica con meses cerrados desde agosto, arrastre de saldo, el mes actual abierto y vales en cada estado.
 
