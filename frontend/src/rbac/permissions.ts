@@ -20,4 +20,5 @@ export const PERMISSIONS = {
   PETTY_CASH_READ: 'petty-cash:read',
   PETTY_CASH_REQUEST: 'petty-cash:request',
   PETTY_CASH_MANAGE: 'petty-cash:manage',
+  REPORTS_READ: 'reports:read',
 } as const;

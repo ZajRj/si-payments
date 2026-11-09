@@ -13,6 +13,7 @@ import { paymentRequestsRouter, paymentsRouter } from './modules/payment-request
 import { peopleRouter } from './modules/people/people.routes.js';
 import { pettyCashRouter } from './modules/petty-cash/petty-cash.routes.js';
 import { projectsRouter } from './modules/projects/projects.routes.js';
+import { reportsRouter } from './modules/reports/reports.routes.js';
 import { rolesRouter } from './modules/roles/roles.routes.js';
 import { settingsRouter } from './modules/settings/settings.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
@@ -45,6 +46,7 @@ export function createApp() {
   app.use('/api/payment-requests', paymentRequestsRouter);
   app.use('/api/payments', paymentsRouter);
   app.use('/api/petty-cash', pettyCashRouter);
+  app.use('/api/reports', reportsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -19,6 +19,7 @@ import {
   type RequestStatus,
 } from '@/api/payment-requests';
 import { listProjects, type Project } from '@/api/projects';
+import { paymentRequestPdfUrl, receiptPdfUrl } from '@/api/reports';
 import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
@@ -27,6 +28,7 @@ const auth = useAuthStore();
 const canCreate = computed(() => auth.can(PERMISSIONS.PAYMENT_REQUESTS_CREATE));
 const canDecide = computed(() => auth.can(PERMISSIONS.PAYMENT_REQUESTS_DECIDE));
 const canRegister = computed(() => auth.can(PERMISSIONS.PAYMENTS_REGISTER));
+const canReport = computed(() => auth.can(PERMISSIONS.REPORTS_READ));
 
 const requests = ref<PaymentRequestSummary[]>([]);
 const projects = ref<Project[]>([]);
@@ -264,6 +266,9 @@ onMounted(load);
     </p>
 
     <div class="actions">
+      <a v-if="canReport" class="button" :href="paymentRequestPdfUrl(detail.id)" target="_blank" rel="noopener">
+        Solicitud consolidada PDF
+      </a>
       <template v-if="canCreate">
         <button
           v-if="detail.status === 'DRAFT'"
@@ -409,7 +414,7 @@ onMounted(load);
             <th scope="col">Referencia</th>
             <th scope="col">Registrado por</th>
             <th scope="col">Estado</th>
-            <th v-if="canRegister" scope="col"><span class="sr-only">Acciones</span></th>
+            <th v-if="canRegister || canReport" scope="col"><span class="sr-only">Acciones</span></th>
           </tr>
         </thead>
         <tbody>
@@ -424,9 +429,12 @@ onMounted(load);
               {{ payment.annulledAt ? 'Anulado' : 'Vigente' }}
               <span v-if="payment.annulmentReason" class="permission-code">{{ payment.annulmentReason }}</span>
             </td>
-            <td v-if="canRegister">
+            <td v-if="canRegister || canReport" class="actions">
+              <a v-if="canReport" class="button" :href="receiptPdfUrl(payment.id)" target="_blank" rel="noopener">
+                Recibo PDF
+              </a>
               <button
-                v-if="!payment.annulledAt"
+                v-if="canRegister && !payment.annulledAt"
                 type="button"
                 class="button"
                 @click="prompt = { kind: 'annul', payment, text: '' }"
@@ -436,7 +444,7 @@ onMounted(load);
             </td>
           </tr>
           <tr v-if="detail.payments.length === 0">
-            <td :colspan="canRegister ? 8 : 7">Todavía no hay pagos.</td>
+            <td :colspan="canRegister || canReport ? 8 : 7">Todavía no hay pagos.</td>
           </tr>
         </tbody>
       </table>
