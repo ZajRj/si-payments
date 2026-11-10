@@ -238,7 +238,7 @@ export async function paymentRequestPdf(requestId: number) {
       { label: 'Elaborado por', name: request.createdBy.name, detail: 'Generador de Nómina' },
       {
         label: request.status === 'REJECTED' ? 'Rechazado por' : 'Aprobado por',
-        name: request.decidedBy?.name ?? '',
+        name: request.decidedBy?.name ?? 'Pendiente de decisión',
         detail: 'Receptor de Nómina',
       },
     ]);

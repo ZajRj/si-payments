@@ -22,7 +22,9 @@ import {
   type Voucher,
 } from '@/api/petty-cash';
 import { listProjects, type Project } from '@/api/projects';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd, parseUsd } from '@/lib/money';
+import { VOUCHER_STATUS_TONES, activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -374,7 +376,7 @@ onMounted(load);
             <th scope="col">Vale</th>
             <th scope="col">Concepto</th>
             <th scope="col">Beneficiario</th>
-            <th scope="col">Monto</th>
+            <th scope="col" class="num">Monto</th>
             <th scope="col">Estado</th>
             <th scope="col">Rendición</th>
             <th scope="col"><span class="sr-only">Acciones</span></th>
@@ -388,9 +390,9 @@ onMounted(load);
               <span class="permission-code">Solicitado por {{ voucher.requestedBy?.name }}</span>
             </td>
             <td>{{ voucher.beneficiary }}</td>
-            <td class="nowrap">{{ formatUsd(voucher.amountCents) }}</td>
+            <td class="num">{{ formatUsd(voucher.amountCents) }}</td>
             <td>
-              {{ VOUCHER_STATUS_LABELS[voucher.status] }}
+              <StatusBadge :label="VOUCHER_STATUS_LABELS[voucher.status]" :tone="VOUCHER_STATUS_TONES[voucher.status]" />
               <span v-if="voucher.rejectionReason" class="permission-code">{{ voucher.rejectionReason }}</span>
             </td>
             <td>
@@ -449,21 +451,21 @@ onMounted(load);
           <tr>
             <th scope="col">Mes</th>
             <th scope="col">Estado</th>
-            <th scope="col">Saldo inicial</th>
-            <th scope="col">Reposición</th>
-            <th scope="col">Gastado</th>
-            <th scope="col">Saldo final</th>
+            <th scope="col" class="num">Saldo inicial</th>
+            <th scope="col" class="num">Reposición</th>
+            <th scope="col" class="num">Gastado</th>
+            <th scope="col" class="num">Saldo final</th>
             <th scope="col"><span class="sr-only">Acciones</span></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="period in periods" :key="period.id">
             <td class="nowrap">{{ monthLabel(period) }}</td>
-            <td>{{ period.status === 'OPEN' ? 'Abierto' : 'Cerrado' }}</td>
-            <td class="nowrap">{{ formatUsd(period.openingBalanceCents) }}</td>
-            <td class="nowrap">{{ formatUsd(period.replenishmentCents) }}</td>
-            <td class="nowrap">{{ formatUsd(period.spentCents) }}</td>
-            <td class="nowrap">{{ period.closingBalanceCents === null ? '' : formatUsd(period.closingBalanceCents) }}</td>
+            <td><StatusBadge :label="period.status === 'OPEN' ? 'Abierto' : 'Cerrado'" :tone="period.status === 'OPEN' ? 'success' : 'neutral'" /></td>
+            <td class="num">{{ formatUsd(period.openingBalanceCents) }}</td>
+            <td class="num">{{ formatUsd(period.replenishmentCents) }}</td>
+            <td class="num">{{ formatUsd(period.spentCents) }}</td>
+            <td class="num">{{ period.closingBalanceCents === null ? '' : formatUsd(period.closingBalanceCents) }}</td>
             <td>
               <button v-if="period.id !== viewedPeriodId" type="button" class="button" @click="viewPeriod(period.id)">
                 Ver vales
@@ -487,7 +489,7 @@ onMounted(load);
           <th scope="col">Caja</th>
           <th scope="col">Proyecto</th>
           <th scope="col">Mes abierto</th>
-          <th scope="col">Disponible</th>
+          <th scope="col" class="num">Disponible</th>
           <th scope="col">Estado</th>
           <th scope="col"><span class="sr-only">Acciones</span></th>
         </tr>
@@ -497,8 +499,8 @@ onMounted(load);
           <td>{{ fund.name }}</td>
           <td class="nowrap" :title="fund.project.name">{{ fund.project.code }}</td>
           <td class="nowrap">{{ fund.openPeriod ? monthLabel(fund.openPeriod) : 'Ninguno' }}</td>
-          <td class="nowrap">{{ fund.openPeriod ? formatUsd(fund.openPeriod.availableCents) : '' }}</td>
-          <td>{{ fund.active ? 'Activa' : 'Inactiva' }}</td>
+          <td class="num">{{ fund.openPeriod ? formatUsd(fund.openPeriod.availableCents) : '' }}</td>
+          <td><StatusBadge :label="fund.active ? 'Activa' : 'Inactiva'" :tone="activeTone(fund.active)" /></td>
           <td>
             <div class="actions">
               <button type="button" class="button" @click="selectFund(fund.id)">Ver</button>
