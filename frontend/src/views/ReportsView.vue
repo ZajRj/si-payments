@@ -16,7 +16,10 @@ import {
   type PersonStatement,
   type ReportFilters,
 } from '@/api/reports';
+import BalanceStats from '@/components/BalanceStats.vue';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
+import { ACCRUAL_STATUS_TONES } from '@/lib/status';
 
 type Tab = 'balances' | 'payments' | 'statement';
 
@@ -99,7 +102,7 @@ onMounted(async () => {
     Cuánto se ha causado, cuánto se ha pagado, cuándo, a quién, por qué proyecto y cuánto se le adeuda a cada persona.
   </p>
 
-  <div class="actions section-gap" role="tablist" aria-label="Tipo de reporte">
+  <div class="tabs" role="tablist" aria-label="Tipo de reporte">
     <button
       v-for="item in TABS"
       :key="item.value"
@@ -167,11 +170,7 @@ onMounted(async () => {
   <p v-else-if="loading">Cargando…</p>
 
   <template v-else-if="tab === 'balances' && balances">
-    <p>
-      Causado <strong>{{ formatUsd(balances.totals.accruedCents) }}</strong> · Pagado
-      <strong>{{ formatUsd(balances.totals.paidCents) }}</strong> · Adeudado
-      <strong>{{ formatUsd(balances.totals.owedCents) }}</strong>
-    </p>
+    <BalanceStats v-bind="balances.totals" />
     <div class="table-wrapper">
       <table>
         <thead>
@@ -179,9 +178,9 @@ onMounted(async () => {
             <th scope="col">{{ balances.groupBy === 'person' ? 'Persona' : 'Proyecto' }}</th>
             <th v-if="balances.groupBy === 'project'" scope="col">Área</th>
             <th scope="col">Causaciones</th>
-            <th scope="col">Causado</th>
-            <th scope="col">Pagado</th>
-            <th scope="col">Adeudado</th>
+            <th scope="col" class="num">Causado</th>
+            <th scope="col" class="num">Pagado</th>
+            <th scope="col" class="num">Adeudado</th>
             <th v-if="balances.groupBy === 'person'" scope="col"><span class="sr-only">Acciones</span></th>
           </tr>
         </thead>
@@ -197,9 +196,9 @@ onMounted(async () => {
             </td>
             <td v-if="row.project">{{ row.project.area.name }}</td>
             <td>{{ row.accrualCount }}</td>
-            <td class="nowrap">{{ formatUsd(row.accruedCents) }}</td>
-            <td class="nowrap">{{ formatUsd(row.paidCents) }}</td>
-            <td class="nowrap">{{ formatUsd(row.owedCents) }}</td>
+            <td class="num">{{ formatUsd(row.accruedCents) }}</td>
+            <td class="num">{{ formatUsd(row.paidCents) }}</td>
+            <td class="num">{{ formatUsd(row.owedCents) }}</td>
             <td v-if="row.person">
               <button type="button" class="button" @click="openStatement(row.person.id)">Estado de cuenta</button>
             </td>
@@ -213,10 +212,18 @@ onMounted(async () => {
   </template>
 
   <template v-else-if="tab === 'payments' && payments">
-    <p>
-      {{ payments.totals.paymentCount }} pagos vigentes por <strong>{{ formatUsd(payments.totals.amountCents) }}</strong>
-      <template v-if="payments.totals.annulledCount > 0"> · {{ payments.totals.annulledCount }} anulados (no suman)</template>
-    </p>
+    <section class="stats" aria-label="Totales">
+      <div class="stat stat-accent">
+        <span class="stat-label">Total pagado</span>
+        <span class="stat-value">{{ formatUsd(payments.totals.amountCents) }}</span>
+        <span class="stat-note">{{ payments.totals.paymentCount }} pagos vigentes</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Pagos anulados</span>
+        <span class="stat-value">{{ payments.totals.annulledCount }}</span>
+        <span class="stat-note">No suman al total</span>
+      </div>
+    </section>
     <div class="table-wrapper">
       <table>
         <thead>
@@ -226,7 +233,7 @@ onMounted(async () => {
             <th scope="col">Persona</th>
             <th scope="col">Proyecto</th>
             <th scope="col">Solicitud</th>
-            <th scope="col">Monto</th>
+            <th scope="col" class="num">Monto</th>
             <th scope="col">Referencia</th>
             <th scope="col">Estado</th>
             <th scope="col"><span class="sr-only">PDF</span></th>
@@ -242,10 +249,10 @@ onMounted(async () => {
             </td>
             <td class="nowrap" :title="payment.project.name">{{ payment.project.code }}</td>
             <td class="nowrap">#{{ payment.requestId }}</td>
-            <td class="nowrap">{{ formatUsd(payment.amountCents) }}</td>
+            <td class="num">{{ formatUsd(payment.amountCents) }}</td>
             <td>{{ payment.reference }}</td>
             <td>
-              {{ payment.annulledAt ? 'Anulado' : 'Vigente' }}
+              <StatusBadge :label="payment.annulledAt ? 'Anulado' : 'Vigente'" :tone="payment.annulledAt ? 'danger' : 'success'" />
               <span v-if="payment.annulmentReason" class="permission-code">{{ payment.annulmentReason }}</span>
             </td>
             <td>
@@ -264,11 +271,7 @@ onMounted(async () => {
     <p v-if="!statement" class="hint">Selecciona una persona y pulsa Consultar.</p>
     <template v-else>
       <h2>{{ statement.person.name }} · {{ statement.person.idNumber }}</h2>
-      <p>
-        Causado <strong>{{ formatUsd(statement.totals.accruedCents) }}</strong> · Pagado
-        <strong>{{ formatUsd(statement.totals.paidCents) }}</strong> · Adeudado
-        <strong>{{ formatUsd(statement.totals.owedCents) }}</strong>
-      </p>
+      <BalanceStats v-bind="statement.totals" />
 
       <h2 class="section-gap">Causaciones</h2>
       <div class="table-wrapper">
@@ -278,9 +281,9 @@ onMounted(async () => {
               <th scope="col">Período</th>
               <th scope="col">Proyecto</th>
               <th scope="col">Días</th>
-              <th scope="col">Causado</th>
-              <th scope="col">Pagado</th>
-              <th scope="col">Adeudado</th>
+              <th scope="col" class="num">Causado</th>
+              <th scope="col" class="num">Pagado</th>
+              <th scope="col" class="num">Adeudado</th>
               <th scope="col">Estado</th>
             </tr>
           </thead>
@@ -292,10 +295,10 @@ onMounted(async () => {
               </td>
               <td class="nowrap" :title="accrual.project.name">{{ accrual.project.code }}</td>
               <td class="nowrap">{{ accrual.activeDays }} / {{ accrual.periodDays }}</td>
-              <td class="nowrap">{{ formatUsd(accrual.amountCents) }}</td>
-              <td class="nowrap">{{ formatUsd(accrual.paidCents) }}</td>
-              <td class="nowrap">{{ formatUsd(accrual.owedCents) }}</td>
-              <td>{{ ACCRUAL_STATUS_LABELS[accrual.status] }}</td>
+              <td class="num">{{ formatUsd(accrual.amountCents) }}</td>
+              <td class="num">{{ formatUsd(accrual.paidCents) }}</td>
+              <td class="num">{{ formatUsd(accrual.owedCents) }}</td>
+              <td><StatusBadge :label="ACCRUAL_STATUS_LABELS[accrual.status]" :tone="ACCRUAL_STATUS_TONES[accrual.status]" /></td>
             </tr>
             <tr v-if="statement.accruals.length === 0">
               <td colspan="7">No hay causaciones con esos filtros.</td>
@@ -312,7 +315,7 @@ onMounted(async () => {
               <th scope="col">Fecha</th>
               <th scope="col">Recibo</th>
               <th scope="col">Proyecto</th>
-              <th scope="col">Monto</th>
+              <th scope="col" class="num">Monto</th>
               <th scope="col">Estado</th>
               <th scope="col"><span class="sr-only">PDF</span></th>
             </tr>
@@ -322,9 +325,9 @@ onMounted(async () => {
               <td class="nowrap">{{ payment.paidOn }}</td>
               <td class="nowrap">#{{ payment.id }}</td>
               <td class="nowrap" :title="payment.project.name">{{ payment.project.code }}</td>
-              <td class="nowrap">{{ formatUsd(payment.amountCents) }}</td>
+              <td class="num">{{ formatUsd(payment.amountCents) }}</td>
               <td>
-                {{ payment.annulledAt ? 'Anulado' : 'Vigente' }}
+                <StatusBadge :label="payment.annulledAt ? 'Anulado' : 'Vigente'" :tone="payment.annulledAt ? 'danger' : 'success'" />
                 <span v-if="payment.annulmentReason" class="permission-code">{{ payment.annulmentReason }}</span>
               </td>
               <td>

@@ -2,6 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { createArea, listAreas, updateArea, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
+import StatusBadge from '@/components/StatusBadge.vue';
+import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -102,7 +104,7 @@ onMounted(load);
       <tbody>
         <tr v-for="area in areas" :key="area.id">
           <td>{{ area.name }}</td>
-          <td>{{ area.active ? 'Activa' : 'Inactiva' }}</td>
+          <td><StatusBadge :label="area.active ? 'Activa' : 'Inactiva'" :tone="activeTone(area.active)" /></td>
           <td v-if="canManage">
             <button type="button" class="button" @click="openEdit(area)">Editar</button>
           </td>

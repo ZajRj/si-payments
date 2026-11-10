@@ -15,7 +15,9 @@ import { errorMessage } from '@/api/http';
 import { listPaymentGroups, listPeriods, type PaymentGroup, type Period } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
+import { ACCRUAL_STATUS_TONES } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -303,7 +305,7 @@ onMounted(load);
             <th scope="col">Proyecto</th>
             <th scope="col">Período</th>
             <th scope="col">Causaciones vigentes</th>
-            <th scope="col">Total</th>
+            <th scope="col" class="num">Total</th>
             <th scope="col">Generado</th>
             <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
           </tr>
@@ -317,7 +319,7 @@ onMounted(load);
               <span class="permission-code">{{ batch.period.paymentGroup.name }}</span>
             </td>
             <td>{{ batch.activeCount }} de {{ batch.accrualCount }}</td>
-            <td class="nowrap">{{ formatUsd(batch.totalCents) }}</td>
+            <td class="num">{{ formatUsd(batch.totalCents) }}</td>
             <td>
               {{ batch.createdBy.name }}
               <span class="permission-code">{{ new Date(batch.createdAt).toLocaleString('es-VE') }}</span>
@@ -353,10 +355,10 @@ onMounted(load);
             <th scope="col">Proyecto</th>
             <th scope="col">Período</th>
             <th scope="col">Días</th>
-            <th scope="col">Monto por período</th>
-            <th scope="col">Causado</th>
-            <th scope="col">Pagado</th>
-            <th scope="col">Pendiente</th>
+            <th scope="col" class="num">Monto por período</th>
+            <th scope="col" class="num">Causado</th>
+            <th scope="col" class="num">Pagado</th>
+            <th scope="col" class="num">Pendiente</th>
             <th scope="col">Estado</th>
             <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
           </tr>
@@ -373,12 +375,12 @@ onMounted(load);
               <span class="permission-code">Lote #{{ accrual.batchId }}</span>
             </td>
             <td class="nowrap">{{ accrual.activeDays }} / {{ accrual.periodDays }}</td>
-            <td class="nowrap">{{ formatUsd(accrual.assignmentAmountCents) }}</td>
-            <td class="nowrap">{{ formatUsd(accrual.amountCents) }}</td>
-            <td class="nowrap">{{ formatUsd(accrual.paidCents) }}</td>
-            <td class="nowrap">{{ formatUsd(accrual.pendingCents) }}</td>
+            <td class="num">{{ formatUsd(accrual.assignmentAmountCents) }}</td>
+            <td class="num">{{ formatUsd(accrual.amountCents) }}</td>
+            <td class="num">{{ formatUsd(accrual.paidCents) }}</td>
+            <td class="num">{{ formatUsd(accrual.pendingCents) }}</td>
             <td>
-              {{ ACCRUAL_STATUS_LABELS[accrual.status] }}
+              <StatusBadge :label="ACCRUAL_STATUS_LABELS[accrual.status]" :tone="ACCRUAL_STATUS_TONES[accrual.status]" />
               <span v-if="accrual.openRequestId" class="permission-code">Solicitud #{{ accrual.openRequestId }}</span>
               <span v-if="accrual.annulmentReason" class="permission-code">{{ accrual.annulmentReason }}</span>
             </td>
