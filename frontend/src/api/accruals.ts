@@ -57,6 +57,11 @@ export type AccrualFilters = {
   status?: AccrualStatusFilter;
 };
 
+export type PageMeta = { total: number; page: number; pageSize: number; pageCount: number };
+export type AccrualTotals = { amountCents: number; paidCents: number; pendingCents: number };
+export type AccrualPage = PageMeta & { accruals: Accrual[]; totals: AccrualTotals };
+export type BatchPage = PageMeta & { batches: AccrualBatch[] };
+
 function query(filters: Record<string, unknown>) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
@@ -65,14 +70,12 @@ function query(filters: Record<string, unknown>) {
   return params;
 }
 
-export async function listAccruals(filters: AccrualFilters = {}) {
-  const { accruals } = await http<{ accruals: Accrual[] }>(`/accruals?${query(filters)}`);
-  return accruals;
+export function listAccruals(filters: AccrualFilters & { page?: number } = {}) {
+  return http<AccrualPage>(`/accruals?${query(filters)}`);
 }
 
-export async function listBatches(filters: { projectId?: number; periodId?: number } = {}) {
-  const { batches } = await http<{ batches: AccrualBatch[] }>(`/accruals/batches?${query(filters)}`);
-  return batches;
+export function listBatches(filters: { projectId?: number; periodId?: number; page?: number } = {}) {
+  return http<BatchPage>(`/accruals/batches?${query(filters)}`);
 }
 
 export async function generateAccruals(payload: { periodId: number; projectId?: number }) {

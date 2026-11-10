@@ -59,6 +59,11 @@ describe('cajas', () => {
     await receiver.post('/api/petty-cash/funds').send({ name: 'caja biologia', projectId }).expect(409);
   });
 
+  it('tampoco los repite con espacios de más', async () => {
+    await receiver.post('/api/petty-cash/funds').send({ name: 'Caja   Biología ', projectId }).expect(409);
+    await receiver.post('/api/petty-cash/funds').send({ name: 'caja  biologia', projectId }).expect(409);
+  });
+
   it('se reasigna a otro proyecto desde la interfaz', async () => {
     const res = await receiver.patch(`/api/petty-cash/funds/${fundId}`).send({ projectId: otherProjectId }).expect(200);
     expect(res.body.fund.project.code).toBe('TST-CCH-002');
