@@ -40,7 +40,7 @@ const filters = reactive({
 // Fecha local en formato AAAA-MM-DD, para comparar con las fechas de la API.
 const today = new Date().toLocaleDateString('sv-SE');
 
-watch(filters, () => loadAssignments());
+watch(filters, () => void loadAssignments());
 
 function nextDay(date: string) {
   const next = new Date(`${date}T00:00:00Z`);
@@ -67,19 +67,25 @@ const activePeople = computed(() => people.value.filter((person) => person.activ
 const activeProjects = computed(() => projects.value.filter((project) => project.active));
 const activeGroups = computed(() => groups.value.filter((group) => group.active));
 
+// Si cambian los filtros mientras hay una consulta en vuelo, solo la última actualiza la lista.
+let loadSeq = 0;
+
 async function loadAssignments() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    assignments.value = await listAssignments({
+    const result = await listAssignments({
       projectId: filters.projectId || undefined,
       personId: filters.personId || undefined,
       openOnly: filters.openOnly || undefined,
     });
+    if (seq !== loadSeq) return;
+    assignments.value = result;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 

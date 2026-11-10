@@ -45,20 +45,26 @@ const route = useRoute();
 const detailEl = ref<HTMLElement | null>(null);
 
 // Al cambiar un filtro se recarga la lista; no hace falta un botón.
-watch(filters, loadRequests);
+watch(filters, () => void loadRequests());
+
+// Si cambian los filtros mientras hay una consulta en vuelo, solo la última actualiza la lista.
+let loadSeq = 0;
 
 async function loadRequests() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    requests.value = await listPaymentRequests({
+    const result = await listPaymentRequests({
       projectId: filters.projectId || undefined,
       status: filters.status || undefined,
     });
+    if (seq !== loadSeq) return;
+    requests.value = result;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 

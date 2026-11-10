@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { listPaymentRequests, REQUEST_STATUS_LABELS, type PaymentRequestSummary } from '@/api/payment-requests';
-import { listVouchers, monthLabel, VOUCHER_STATUS_LABELS, type Voucher } from '@/api/petty-cash';
+import { listVouchers, monthLabel, VOUCHER_STATUS_LABELS, type Voucher, type VoucherStatus } from '@/api/petty-cash';
 import { getBalances, type BalanceTotals } from '@/api/reports';
 import AppIcon from '@/components/AppIcon.vue';
 import BalanceStats from '@/components/BalanceStats.vue';
@@ -55,11 +55,14 @@ const vouchers = ref<Voucher[]>([]);
 const canSeeVouchers = computed(() => auth.can(PERMISSIONS.PETTY_CASH_READ));
 
 // Vales que esperan acción: el receptor aprueba y desembolsa; el generador rinde lo desembolsado.
-const pendingVouchers = computed(() =>
-  vouchers.value.filter((voucher) =>
-    decides.value ? ['REQUESTED', 'APPROVED'].includes(voucher.status) : voucher.status === 'DISBURSED',
-  ),
-);
+// Se piden al servidor solo los estados pendientes de cada rol, no todos los vales.
+const pendingVoucherStatuses = computed<VoucherStatus[]>(() => (decides.value ? ['REQUESTED', 'APPROVED'] : ['DISBURSED']));
+const pendingVouchers = computed(() => vouchers.value);
+
+async function loadPendingVouchers() {
+  const lists = await Promise.all(pendingVoucherStatuses.value.map((status) => listVouchers({ status })));
+  return lists.flat().sort((a, b) => b.id - a.id);
+}
 
 // Lo que espera una acción del usuario: el receptor decide y entrega; el generador completa borradores.
 const pending = computed(() =>
@@ -81,7 +84,7 @@ onMounted(async () => {
     const [balances, list, allVouchers] = await Promise.all([
       canReport.value ? getBalances('project', {}) : null,
       canSeeRequests.value ? listPaymentRequests() : [],
-      canSeeVouchers.value ? listVouchers() : [],
+      canSeeVouchers.value ? loadPendingVouchers() : [],
     ]);
     totals.value = balances?.totals ?? null;
     requests.value = list;

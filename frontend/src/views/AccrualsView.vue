@@ -55,13 +55,17 @@ watch(
   },
 );
 
+// Si cambian los filtros mientras hay una consulta en vuelo, solo la última actualiza las tablas.
+let loadSeq = 0;
+
 async function loadData() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
     const projectId = filters.projectId || undefined;
     const periodId = filters.periodId || undefined;
-    [accruals.value, batches.value] = await Promise.all([
+    const [accrualList, batchList] = await Promise.all([
       listAccruals({
         projectId,
         periodId,
@@ -71,14 +75,17 @@ async function loadData() {
       }),
       listBatches({ projectId, periodId }),
     ]);
+    if (seq !== loadSeq) return;
+    accruals.value = accrualList;
+    batches.value = batchList;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 
-watch(filters, () => loadData());
+watch(filters, () => void loadData());
 
 async function load() {
   try {

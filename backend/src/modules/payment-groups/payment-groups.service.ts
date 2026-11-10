@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { addDays, businessToday, displayDate, formatDateOnly } from '../../lib/dates.js';
+import { addDays, businessToday, displayDate } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { sameName } from '../../lib/names.js';
 import { prisma } from '../../lib/prisma.js';

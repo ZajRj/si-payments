@@ -116,6 +116,7 @@ async function save() {
 
 async function showPeriods(group: PaymentGroup) {
   selected.value = group;
+  confirmingRemove.value = false;
   Object.assign(generateForm, { from: '', until: '' });
   await loadPeriods();
 }
@@ -247,7 +248,7 @@ onMounted(load);
   <section v-if="selected" class="card section-gap">
     <div class="page-header">
       <h2>Períodos de «{{ selected.name }}»</h2>
-      <button type="button" class="button" @click="selected = null">Cerrar</button>
+      <button type="button" class="button" @click="selected = null; confirmingRemove = false">Cerrar</button>
     </div>
 
     <form v-if="canManage && selected.active" class="form-grid" @submit.prevent="generate">

@@ -17,7 +17,7 @@ const search = ref('');
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 watch(search, () => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => load(), 300);
+  searchTimer = setTimeout(() => void load(), 300);
 });
 onBeforeUnmount(() => clearTimeout(searchTimer));
 const loading = ref(true);
@@ -29,15 +29,21 @@ const saving = ref(false);
 const formError = ref('');
 const form = reactive({ idNumber: '', name: '', phone: '', email: '', active: true });
 
+// Al escribir rápido pueden quedar varias consultas en vuelo: solo la última actualiza la pantalla.
+let loadSeq = 0;
+
 async function load() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    people.value = await listPeople({ search: search.value.trim() || undefined });
+    const result = await listPeople({ search: search.value.trim() || undefined });
+    if (seq !== loadSeq) return;
+    people.value = result;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 
