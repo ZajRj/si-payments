@@ -45,7 +45,7 @@ const statement = ref<PersonStatement | null>(null);
 function currentFilters(): ReportFilters {
   return {
     projectId: filters.projectId || undefined,
-    areaId: filters.areaId || undefined,
+    areaId: tab.value === 'statement' ? undefined : filters.areaId || undefined,
     personId: filters.personId || undefined,
     from: filters.from || undefined,
     to: filters.to || undefined,

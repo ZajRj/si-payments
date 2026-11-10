@@ -46,6 +46,40 @@ No genera nada con fecha futura y no se ejecuta en los tests.
 
 Los datos se guardan en el volumen `backend-data`. Para borrarlos y empezar de cero, usa `docker compose down -v`.
 
+## Desarrollo local sin Docker
+
+Es la forma recomendada para programar: el backend se reinicia solo al guardar y el frontend recarga en caliente. Requisito: Node.js 24 o superior.
+
+1. Backend. Desde `backend/`:
+
+   ```bash
+   cp .env.example .env     # define JWT_SECRET con al menos 32 caracteres (openssl rand -hex 32)
+   npm ci
+   npm run db:setup         # aplica las migraciones y ejecuta el seed (crea prisma/dev.db)
+   npm run dev              # API en http://localhost:3000
+   ```
+
+2. Frontend. En otra terminal, desde `frontend/`:
+
+   ```bash
+   npm ci
+   npm run dev              # http://localhost:5173
+   ```
+
+3. Abre <http://localhost:5173>. Vite hace de proxy de `/api` hacia el backend; si el backend corre en otro puerto, define `VITE_API_PROXY` (por ejemplo `http://localhost:4000`).
+
+Los usuarios de prueba son los de la sección siguiente, con la contraseña de `SEED_USER_PASSWORD` en `backend/.env`.
+
+| Comando (en `backend/`) | Qué hace |
+|---|---|
+| `npm run db:setup` | Aplica migraciones y ejecuta el seed. Es seguro repetirlo. |
+| `npm run db:migrate` | Crea y aplica una migración nueva tras cambiar `schema.prisma`. |
+| `npm run db:seed` | Solo el seed. |
+| `npm test` | Tests con su propia base (`prisma/test.db`); no tocan `dev.db`. |
+| `npm run typecheck` | Comprueba los tipos. |
+
+Para empezar de cero, borra `backend/prisma/dev.db` y ejecuta `npm run db:setup`.
+
 ### Usuarios de prueba
 
 La contraseña es el valor de `SEED_USER_PASSWORD` en `.env` (`Demo1234!` en el ejemplo).

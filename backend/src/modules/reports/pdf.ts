@@ -10,6 +10,7 @@ export type Doc = PDFKit.PDFDocument;
 const MARGIN = 50;
 const MUTED = '#555555';
 const LINE = '#999999';
+const WATERMARK_SIZE = 90;
 
 // USD 1.234,56, sin depender del ICU instalado en el servidor.
 export function usd(cents: number): string {
@@ -211,6 +212,10 @@ export function signatures(doc: Doc, entries: { label: string; name: string; det
 
 // Marca de agua diagonal para documentos anulados o que todavía no son definitivos.
 export function watermark(doc: Doc, text: string) {
+  const maxWidth = doc.page.width * 0.85;
+  doc.font('Helvetica-Bold').fontSize(WATERMARK_SIZE);
+  const size = Math.min(WATERMARK_SIZE, (WATERMARK_SIZE * maxWidth) / doc.widthOfString(text));
+
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
@@ -218,10 +223,10 @@ export function watermark(doc: Doc, text: string) {
     doc.rotate(-35, { origin: [doc.page.width / 2, doc.page.height / 2] });
     doc
       .font('Helvetica-Bold')
-      .fontSize(90)
+      .fontSize(size)
       .fillColor('#cc0000')
       .fillOpacity(0.12)
-      .text(text, 0, doc.page.height / 2 - 45, { width: doc.page.width, align: 'center', lineBreak: false });
+      .text(text, 0, doc.page.height / 2 - size / 2, { width: doc.page.width, align: 'center', lineBreak: false });
     doc.restore();
   }
   doc.fillOpacity(1).fillColor('black');
