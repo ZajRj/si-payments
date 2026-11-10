@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
 import { businessToday, formatDateOnly } from '../../lib/dates.js';
+import { displayUsd } from '../../lib/money.js';
 import { HttpError } from '../../lib/http-error.js';
 import { sameName } from '../../lib/names.js';
 import { prisma } from '../../lib/prisma.js';
@@ -170,7 +171,7 @@ function monthIndex(year: number, month: number) {
 }
 
 function monthLabel(year: number, month: number) {
-  return `${year}-${String(month).padStart(2, '0')}`;
+  return `${String(month).padStart(2, '0')}/${year}`;
 }
 
 // Abre el mes siguiente al último cerrado, con su saldo final como saldo inicial (arrastre).
@@ -312,7 +313,7 @@ function insufficientFunds(availableCents: number) {
   return new HttpError(
     409,
     'INSUFFICIENT_FUNDS',
-    `La caja no tiene saldo suficiente. Disponible: ${(availableCents / 100).toFixed(2)} USD`,
+    `La caja no tiene saldo suficiente. Disponible: ${displayUsd(availableCents)}`,
   );
 }
 

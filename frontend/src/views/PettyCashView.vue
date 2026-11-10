@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import {
   approveVoucher,
@@ -27,6 +28,7 @@ import { formatUsd, parseUsd } from '@/lib/money';
 import { VOUCHER_STATUS_TONES, activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { formatDate } from '@/lib/dates';
 
 const auth = useAuthStore();
 const canManage = computed(() => auth.can(PERMISSIONS.PETTY_CASH_MANAGE));
@@ -105,6 +107,8 @@ const viewedPeriodId = ref(0);
 const vouchers = ref<Voucher[]>([]);
 const detailError = ref('');
 const busy = ref(false);
+// Cerrar el mes no se puede deshacer: pide confirmación en la misma pantalla.
+const confirmingClose = ref(false);
 
 const viewedPeriod = computed(() => periods.value.find((period) => period.id === viewedPeriodId.value) ?? null);
 
@@ -114,6 +118,8 @@ async function loadVouchers() {
 
 async function selectFund(id: number, periodId?: number) {
   detailError.value = '';
+  // La confirmación de cierre es de una caja concreta: no debe pasar a otra al cambiar de caja.
+  if (selected.value?.id !== id) confirmingClose.value = false;
   try {
     funds.value = await listFunds();
     selected.value = funds.value.find((fund) => fund.id === id) ?? null;
@@ -123,6 +129,16 @@ async function selectFund(id: number, periodId?: number) {
   } catch (e) {
     detailError.value = errorMessage(e);
   }
+}
+
+const route = useRoute();
+const detailEl = ref<HTMLElement | null>(null);
+
+// Abre una caja desde la lista y lleva la vista al detalle, que queda arriba de la lista.
+async function openFund(id: number) {
+  await selectFund(id);
+  await nextTick();
+  detailEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function viewPeriod(id: number) {
@@ -221,7 +237,11 @@ function submitVoucherAction() {
   );
 }
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  const fundId = Number(route.query.fund);
+  if (fundId) await openFund(fundId);
+});
 </script>
 
 <template>
@@ -260,10 +280,10 @@ onMounted(load);
     </div>
   </form>
 
-  <section v-if="selected" class="card section-gap">
+  <section v-if="selected" ref="detailEl" class="card section-gap">
     <div class="page-header">
       <h2>{{ selected.name }} · {{ selected.project.code }}</h2>
-      <button type="button" class="button" @click="selected = null">Cerrar detalle</button>
+      <button type="button" class="button" @click="selected = null; confirmingClose = false">Cerrar detalle</button>
     </div>
 
     <template v-if="selected.openPeriod">
@@ -282,15 +302,21 @@ onMounted(load);
         <button v-if="canRequest && selected.active" type="button" class="button button-primary" @click="openVoucherForm">
           Solicitar vale
         </button>
-        <button
-          v-if="canManage"
-          type="button"
-          class="button"
-          :disabled="busy"
-          @click="run(() => closePeriod(selected!.openPeriod!.id))"
-        >
-          Cerrar mes
-        </button>
+        <template v-if="canManage && !confirmingClose">
+          <button type="button" class="button" :disabled="busy" @click="confirmingClose = true">Cerrar mes</button>
+        </template>
+        <template v-else-if="canManage">
+          <span class="hint">El mes {{ monthLabel(selected.openPeriod) }} se cierra y su saldo pasa al mes siguiente. No se puede deshacer.</span>
+          <button
+            type="button"
+            class="button button-primary"
+            :disabled="busy"
+            @click="confirmingClose = false; run(() => closePeriod(selected!.openPeriod!.id))"
+          >
+            Sí, cerrar mes
+          </button>
+          <button type="button" class="button" @click="confirmingClose = false">No</button>
+        </template>
       </div>
     </template>
     <template v-else>
@@ -400,7 +426,7 @@ onMounted(load);
                 Gastado {{ formatUsd(voucher.spentCents ?? 0) }}
                 <span class="permission-code">
                   Devuelto {{ formatUsd(voucher.returnedCents ?? 0) }} · Comprobante {{ voucher.receiptReference }} del
-                  {{ voucher.receiptDate }}
+                  {{ formatDate(voucher.receiptDate) }}
                 </span>
               </template>
             </td>
@@ -503,7 +529,7 @@ onMounted(load);
           <td><StatusBadge :label="fund.active ? 'Activa' : 'Inactiva'" :tone="activeTone(fund.active)" /></td>
           <td>
             <div class="actions">
-              <button type="button" class="button" @click="selectFund(fund.id)">Ver</button>
+              <button type="button" class="button" @click="openFund(fund.id)">Ver</button>
               <button v-if="canManage" type="button" class="button" @click="openForm(fund)">Editar</button>
             </div>
           </td>

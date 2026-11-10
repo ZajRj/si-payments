@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
   changeAssignmentAmount,
@@ -17,6 +17,7 @@ import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import type { Tone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { formatDate, formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -33,11 +34,13 @@ const initialProject = Number(route.query.projectId);
 const filters = reactive({
   projectId: Number.isInteger(initialProject) && initialProject > 0 ? initialProject : 0,
   personId: 0,
-  openOnly: false,
+  openOnly: true,
 });
 
 // Fecha local en formato AAAA-MM-DD, para comparar con las fechas de la API.
 const today = new Date().toLocaleDateString('sv-SE');
+
+watch(filters, () => void loadAssignments());
 
 function nextDay(date: string) {
   const next = new Date(`${date}T00:00:00Z`);
@@ -64,19 +67,25 @@ const activePeople = computed(() => people.value.filter((person) => person.activ
 const activeProjects = computed(() => projects.value.filter((project) => project.active));
 const activeGroups = computed(() => groups.value.filter((group) => group.active));
 
+// Si cambian los filtros mientras hay una consulta en vuelo, solo la última actualiza la lista.
+let loadSeq = 0;
+
 async function loadAssignments() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    assignments.value = await listAssignments({
+    const result = await listAssignments({
       projectId: filters.projectId || undefined,
       personId: filters.personId || undefined,
       openOnly: filters.openOnly || undefined,
     });
+    if (seq !== loadSeq) return;
+    assignments.value = result;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 
@@ -221,7 +230,7 @@ onMounted(load);
         </option>
       </select>
       <span v-if="selectedProject" class="hint">
-        Vigencia: {{ selectedProject.startDate }} al {{ selectedProject.endDate }}
+        Vigencia: {{ formatRange(selectedProject.startDate, selectedProject.endDate) }}
       </span>
     </label>
     <label class="field">
@@ -300,7 +309,7 @@ onMounted(load);
     </div>
   </form>
 
-  <form class="card form-grid section-gap" @submit.prevent="loadAssignments">
+  <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
       Proyecto
       <select v-model.number="filters.projectId">
@@ -319,9 +328,6 @@ onMounted(load);
       <input v-model="filters.openOnly" type="checkbox" />
       Solo vigentes o futuras
     </label>
-    <div class="actions">
-      <button type="submit" class="button">Filtrar</button>
-    </div>
   </form>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -349,9 +355,9 @@ onMounted(load);
           <td class="nowrap" :title="assignment.project.name">{{ assignment.project.code }}</td>
           <td>{{ assignment.paymentGroup.name }}</td>
           <td class="num">{{ formatUsd(assignment.amountCents) }}</td>
-          <td class="nowrap">{{ assignment.startDate }}</td>
+          <td class="nowrap">{{ formatDate(assignment.startDate) }}</td>
           <td class="nowrap">
-            {{ assignment.effectiveEndDate }}
+            {{ formatDate(assignment.effectiveEndDate) }}
             <span v-if="assignment.endDate === null" class="permission-code">fin del proyecto</span>
           </td>
           <td><StatusBadge :label="status(assignment)" :tone="STATUS_TONES[status(assignment)]" /></td>

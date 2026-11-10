@@ -7,6 +7,7 @@ import StatusBadge from '@/components/StatusBadge.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const canManage = computed(() => auth.can(PERMISSIONS.PROJECTS_MANAGE));
@@ -168,7 +169,7 @@ onMounted(load);
           <td>{{ project.name }}</td>
           <td>{{ project.area.name }}</td>
           <td>{{ SCOPE_LABELS[project.scope] }}</td>
-          <td class="nowrap">{{ project.startDate }} al {{ project.endDate }}</td>
+          <td class="nowrap">{{ formatRange(project.startDate, project.endDate) }}</td>
           <td>
             <RouterLink :to="{ name: 'assignments', query: { projectId: project.id } }">
               {{ project.assignmentCount }}

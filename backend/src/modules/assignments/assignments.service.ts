@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { addDays, formatDateOnly, businessToday } from '../../lib/dates.js';
+import { addDays, displayDate, formatDateOnly, businessToday } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { assertAccrualsUnaffected } from '../accruals/accruals.service.js';
@@ -125,7 +125,7 @@ export async function changeAssignmentAmount(
       throw new HttpError(
         400,
         'INVALID_EFFECTIVE_DATE',
-        `La fecha del cambio debe estar entre ${formatDateOnly(addDays(current.startDate, 1))} y ${formatDateOnly(currentEnd)}`,
+        `La fecha del cambio debe estar entre ${displayDate(addDays(current.startDate, 1))} y ${displayDate(currentEnd)}`,
       );
     }
 
@@ -190,7 +190,7 @@ async function loadParticipants(
 }
 
 function assertWithinProject(project: { startDate: Date; endDate: Date }, startDate: Date, endDate: Date | null) {
-  const range = `${formatDateOnly(project.startDate)} al ${formatDateOnly(project.endDate)}`;
+  const range = `${displayDate(project.startDate)} al ${displayDate(project.endDate)}`;
 
   if (startDate.getTime() < project.startDate.getTime() || startDate.getTime() > project.endDate.getTime()) {
     throw new HttpError(400, 'OUTSIDE_PROJECT', `La fecha de inicio debe estar dentro de la vigencia del proyecto (${range})`);
@@ -226,11 +226,11 @@ async function assertNoOverlap(
   });
 
   if (overlapping) {
-    const until = overlapping.endDate ? formatDateOnly(overlapping.endDate) : 'el fin del proyecto';
+    const until = overlapping.endDate ? `al ${displayDate(overlapping.endDate)}` : 'hasta el fin del proyecto';
     throw new HttpError(
       409,
       'ASSIGNMENT_OVERLAP',
-      `Ya existe una asignación de esta persona en el mismo proyecto y grupo de pago del ${formatDateOnly(overlapping.startDate)} al ${until}`,
+      `Ya existe una asignación de esta persona en el mismo proyecto y grupo de pago desde el ${displayDate(overlapping.startDate)} ${until}`,
     );
   }
 }

@@ -49,7 +49,7 @@ onMounted(load);
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
   <template v-else>
-    <form v-for="setting in settings" :key="setting.key" class="card form-grid" @submit.prevent="save(setting)">
+    <form v-for="setting in settings" :key="setting.key" class="card form-grid settings-form" @submit.prevent="save(setting)">
       <label class="field">
         {{ setting.label }}
         <input v-model="values[setting.key]" required maxlength="500" />
