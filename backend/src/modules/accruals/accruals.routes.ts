@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { paginationQuerySchema } from '../../lib/pagination.js';
 import { idParamSchema, reasonSchema } from '../../lib/validation.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { requirePermission } from '../../middleware/authorize.js';
@@ -15,7 +16,7 @@ import {
 
 const optionalId = z.coerce.number().int().positive().optional();
 
-const listQuerySchema = z.object({
+const listQuerySchema = paginationQuerySchema().extend({
   projectId: optionalId,
   personId: optionalId,
   periodId: optionalId,
@@ -24,7 +25,7 @@ const listQuerySchema = z.object({
   status: z.enum(ACCRUAL_STATUSES).optional(),
 });
 
-const batchesQuerySchema = z.object({ projectId: optionalId, periodId: optionalId });
+const batchesQuerySchema = paginationQuerySchema().extend({ projectId: optionalId, periodId: optionalId });
 
 const generateSchema = z.object({
   periodId: z.number().int().positive(),
@@ -38,11 +39,13 @@ export const accrualsRouter = Router();
 accrualsRouter.use(authenticate);
 
 accrualsRouter.get('/', requirePermission(PERMISSIONS.PAYROLL_READ), async (req, res) => {
-  res.json({ accruals: await listAccruals(listQuerySchema.parse(req.query)) });
+  const { page, pageSize, ...filters } = listQuerySchema.parse(req.query);
+  res.json(await listAccruals(filters, { page, pageSize }));
 });
 
 accrualsRouter.get('/batches', requirePermission(PERMISSIONS.PAYROLL_READ), async (req, res) => {
-  res.json({ batches: await listBatches(batchesQuerySchema.parse(req.query)) });
+  const { page, pageSize, ...filters } = batchesQuerySchema.parse(req.query);
+  res.json(await listBatches(filters, { page, pageSize }));
 });
 
 accrualsRouter.post('/generate', requirePermission(PERMISSIONS.ACCRUALS_GENERATE), async (req, res) => {

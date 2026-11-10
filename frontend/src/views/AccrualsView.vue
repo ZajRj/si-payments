@@ -9,12 +9,14 @@ import {
   listBatches,
   type Accrual,
   type AccrualBatch,
+  type AccrualTotals,
   type AccrualStatusFilter,
 } from '@/api/accruals';
 import { errorMessage } from '@/api/http';
 import { listPaymentGroups, listPeriods, type PaymentGroup, type Period } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
+import PaginationBar from '@/components/PaginationBar.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
 import { ACCRUAL_STATUS_TONES } from '@/lib/status';
@@ -26,6 +28,10 @@ const canGenerate = computed(() => auth.can(PERMISSIONS.ACCRUALS_GENERATE));
 
 const accruals = ref<Accrual[]>([]);
 const batches = ref<AccrualBatch[]>([]);
+const totals = ref<AccrualTotals>({ amountCents: 0, paidCents: 0, pendingCents: 0 });
+// Cada tabla se pagina por separado; el total de causaciones cubre todo lo filtrado, no solo la página.
+const accrualPaging = reactive({ page: 1, pageCount: 0, total: 0 });
+const batchPaging = reactive({ page: 1, pageCount: 0, total: 0 });
 const projects = ref<Project[]>([]);
 const people = ref<Person[]>([]);
 const groups = ref<PaymentGroup[]>([]);
@@ -54,26 +60,62 @@ watch(
   },
 );
 
-async function loadData() {
+function filterArgs() {
+  return {
+    projectId: filters.projectId || undefined,
+    periodId: filters.periodId || undefined,
+  };
+}
+
+async function loadAccruals(page = accrualPaging.page) {
+  const result = await listAccruals({
+    ...filterArgs(),
+    personId: filters.personId || undefined,
+    paymentGroupId: filters.paymentGroupId || undefined,
+    status: filters.status || undefined,
+    page,
+  });
+  // Si anular dejó la página vacía, retrocede a la última que existe.
+  if (result.accruals.length === 0 && result.pageCount > 0 && page > result.pageCount) {
+    return loadAccruals(result.pageCount);
+  }
+  accruals.value = result.accruals;
+  totals.value = result.totals;
+  Object.assign(accrualPaging, { page: result.page, pageCount: result.pageCount, total: result.total });
+}
+
+async function loadBatches(page = batchPaging.page) {
+  const result = await listBatches({ ...filterArgs(), page });
+  if (result.batches.length === 0 && result.pageCount > 0 && page > result.pageCount) {
+    return loadBatches(result.pageCount);
+  }
+  batches.value = result.batches;
+  Object.assign(batchPaging, { page: result.page, pageCount: result.pageCount, total: result.total });
+}
+
+// `reset` vuelve a la primera página de ambas tablas (filtros nuevos o lote recién generado).
+async function loadData(reset = false) {
   loading.value = true;
   error.value = '';
   try {
-    const projectId = filters.projectId || undefined;
-    const periodId = filters.periodId || undefined;
-    [accruals.value, batches.value] = await Promise.all([
-      listAccruals({
-        projectId,
-        periodId,
-        personId: filters.personId || undefined,
-        paymentGroupId: filters.paymentGroupId || undefined,
-        status: filters.status || undefined,
-      }),
-      listBatches({ projectId, periodId }),
-    ]);
+    if (reset) {
+      accrualPaging.page = 1;
+      batchPaging.page = 1;
+    }
+    await Promise.all([loadAccruals(), loadBatches()]);
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
     loading.value = false;
+  }
+}
+
+async function changePage(table: 'accruals' | 'batches', page: number) {
+  error.value = '';
+  try {
+    await (table === 'accruals' ? loadAccruals(page) : loadBatches(page));
+  } catch (e) {
+    error.value = errorMessage(e);
   }
 }
 
@@ -83,19 +125,8 @@ async function load() {
   } catch (e) {
     error.value = errorMessage(e);
   }
-  await loadData();
+  await loadData(true);
 }
-
-const totals = computed(() =>
-  accruals.value.reduce(
-    (sum, accrual) => ({
-      amountCents: sum.amountCents + (accrual.status === 'ANNULLED' ? 0 : accrual.amountCents),
-      paidCents: sum.paidCents + accrual.paidCents,
-      pendingCents: sum.pendingCents + accrual.pendingCents,
-    }),
-    { amountCents: 0, paidCents: 0, pendingCents: 0 },
-  ),
-);
 
 // Generación por lote.
 const formOpen = ref(false);
@@ -140,7 +171,7 @@ async function generate() {
     const total = created.reduce((sum, batch) => sum + batch.totalCents, 0);
     const count = created.reduce((sum, batch) => sum + batch.activeCount, 0);
     formResult.value = `Se ${created.length === 1 ? 'creó 1 lote' : `crearon ${created.length} lotes`} con ${count} causaciones por ${formatUsd(total)}.`;
-    await loadData();
+    await loadData(true);
   } catch (e) {
     formError.value = errorMessage(e);
   } finally {
@@ -249,7 +280,7 @@ onMounted(load);
     </div>
   </form>
 
-  <form class="card form-grid section-gap" @submit.prevent="loadData">
+  <form class="card form-grid section-gap" @submit.prevent="loadData(true)">
     <label class="field">
       Proyecto
       <select v-model.number="filters.projectId">
@@ -341,6 +372,13 @@ onMounted(load);
         </tbody>
       </table>
     </div>
+    <PaginationBar
+      :page="batchPaging.page"
+      :page-count="batchPaging.pageCount"
+      :total="batchPaging.total"
+      noun="lotes"
+      @change="changePage('batches', $event)"
+    />
 
     <h2 class="section-gap">Causaciones</h2>
     <p class="hint">
@@ -401,5 +439,12 @@ onMounted(load);
         </tbody>
       </table>
     </div>
+    <PaginationBar
+      :page="accrualPaging.page"
+      :page-count="accrualPaging.pageCount"
+      :total="accrualPaging.total"
+      noun="causaciones"
+      @change="changePage('accruals', $event)"
+    />
   </template>
 </template>

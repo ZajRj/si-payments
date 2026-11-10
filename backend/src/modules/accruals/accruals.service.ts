@@ -2,6 +2,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
 import { businessToday, formatDateOnly } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
+import { pageArgs, pageResult, type PaginationQuery } from '../../lib/pagination.js';
 import { prisma } from '../../lib/prisma.js';
 import { openRequestByAccrual, paidByAccrual } from './ledger.js';
 import { activeDaysInPeriod, computeAccrual } from './proration.js';
@@ -56,7 +57,12 @@ function toAccrualDto(accrual: AccrualRecord, paidCents: number, openRequestId: 
   };
 }
 
-export async function listAccruals({ projectId, personId, periodId, paymentGroupId, batchId, status }: ListFilters) {
+// El estado y lo pagado salen del libro de pagos, no de una columna: por eso el filtro por estado y los
+// totales se calculan sobre todo lo que coincide con los filtros y solo después se corta la página.
+export async function listAccruals(
+  { projectId, personId, periodId, paymentGroupId, batchId, status }: ListFilters,
+  pagination: PaginationQuery,
+) {
   const accruals = await prisma.accrual.findMany({
     where: {
       projectId,
@@ -72,13 +78,25 @@ export async function listAccruals({ projectId, personId, periodId, paymentGroup
 
   const ids = accruals.map((accrual) => accrual.id);
   const [paid, openRequests] = await Promise.all([paidByAccrual(prisma, ids), openRequestByAccrual(prisma, ids)]);
-  const dtos = accruals.map((accrual) =>
+  let dtos = accruals.map((accrual) =>
     toAccrualDto(accrual, paid.get(accrual.id) ?? 0, openRequests.get(accrual.id) ?? null),
   );
 
-  if (status === 'UNPAID') return dtos.filter((accrual) => accrual.pendingCents > 0);
-  if (status && status !== 'ANNULLED') return dtos.filter((accrual) => accrual.status === status);
-  return dtos;
+  if (status === 'UNPAID') dtos = dtos.filter((accrual) => accrual.pendingCents > 0);
+  else if (status && status !== 'ANNULLED') dtos = dtos.filter((accrual) => accrual.status === status);
+
+  const totals = dtos.reduce(
+    (sum, accrual) => ({
+      amountCents: sum.amountCents + (accrual.status === 'ANNULLED' ? 0 : accrual.amountCents),
+      paidCents: sum.paidCents + accrual.paidCents,
+      pendingCents: sum.pendingCents + accrual.pendingCents,
+    }),
+    { amountCents: 0, paidCents: 0, pendingCents: 0 },
+  );
+
+  const { skip, take } = pageArgs(pagination);
+  const { items, ...meta } = pageResult(dtos.slice(skip, skip + take), dtos.length, pagination);
+  return { accruals: items, ...meta, totals };
 }
 
 const batchInclude = {
@@ -101,13 +119,19 @@ function toBatchDto({ accruals, period, createdById: _createdById, ...batch }: B
   };
 }
 
-export async function listBatches({ projectId, periodId }: { projectId?: number; periodId?: number }) {
-  const batches = await prisma.accrualBatch.findMany({
-    where: { projectId, periodId },
-    include: batchInclude,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-  });
-  return batches.map(toBatchDto);
+export async function listBatches({ projectId, periodId }: { projectId?: number; periodId?: number }, pagination: PaginationQuery) {
+  const where = { projectId, periodId };
+  const [batches, total] = await Promise.all([
+    prisma.accrualBatch.findMany({
+      where,
+      include: batchInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...pageArgs(pagination),
+    }),
+    prisma.accrualBatch.count({ where }),
+  ]);
+  const { items, ...meta } = pageResult(batches.map(toBatchDto), total, pagination);
+  return { batches: items, ...meta };
 }
 
 // Causa por lote las asignaciones del grupo del período que aún no tengan causación vigente en él.
@@ -146,7 +170,8 @@ export async function generateAccruals(actorId: number, { periodId, projectId }:
     for (const assignment of assignments) {
       const effectiveEnd = assignment.endDate ?? assignment.project.endDate;
       const computed = computeAccrual(assignment.amountCents, { startDate: assignment.startDate, endDate: effectiveEnd }, period);
-      if (computed.activeDays === 0) continue;
+      // Un monto que prorratea a 0 (p. ej. 1 centavo por 1 día de 31) no es deuda: no se causa.
+      if (computed.activeDays === 0 || computed.amountCents === 0) continue;
 
       const rows = byProject.get(assignment.projectId) ?? [];
       rows.push({

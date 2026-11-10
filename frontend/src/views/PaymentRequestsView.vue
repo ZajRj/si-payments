@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { errorMessage } from '@/api/http';
 import {
   annulPayment,
@@ -166,6 +166,21 @@ type Prompt =
   | { kind: 'annul'; payment: Payment; text: string };
 const prompt = ref<Prompt | null>(null);
 
+// El formulario de motivo y los errores de la solicitud están arriba del detalle; al accionar desde un
+// botón de más abajo (anular recibo, registrar entrega) quedarían fuera de vista.
+const promptForm = ref<HTMLElement | null>(null);
+const detailErrorEl = ref<HTMLElement | null>(null);
+watch(prompt, async (value) => {
+  if (!value) return;
+  await nextTick();
+  promptForm.value?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+});
+watch(detailError, async (value) => {
+  if (!value) return;
+  await nextTick();
+  detailErrorEl.value?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+});
+
 const PROMPT_TITLES: Record<Prompt['kind'], string> = {
   approve: 'Aprobar solicitud',
   reject: 'Rechazar solicitud',
@@ -306,7 +321,7 @@ onMounted(load);
       </button>
     </div>
 
-    <form v-if="prompt" class="form-grid section-gap" @submit.prevent="confirmPrompt">
+    <form v-if="prompt" ref="promptForm" class="form-grid section-gap" @submit.prevent="confirmPrompt">
       <h2>
         {{ PROMPT_TITLES[prompt.kind] }}
         <template v-if="prompt.kind === 'annul'"> · recibo #{{ prompt.payment.id }}, {{ prompt.payment.person.name }}</template>
@@ -324,7 +339,7 @@ onMounted(load);
       </div>
     </form>
 
-    <p v-if="detailError" class="error section-gap" role="alert">{{ detailError }}</p>
+    <p v-if="detailError" ref="detailErrorEl" class="error section-gap" role="alert">{{ detailError }}</p>
 
     <h2 class="section-gap">Personas</h2>
     <form @submit.prevent="submitPayments">

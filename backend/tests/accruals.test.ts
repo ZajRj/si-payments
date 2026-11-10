@@ -265,3 +265,72 @@ describe('inmutabilidad en la base de datos', () => {
     await expect(prisma.accrualBatch.update({ where: { id: batch.id }, data: { projectId: batch.projectId } })).rejects.toThrow();
   });
 });
+
+describe('montos que prorratean a cero', () => {
+  it('no causa una asignación cuyo prorrateo da 0,00', async () => {
+    const project = await createProject('TST-CAU-ZERO');
+    const tiny = await createPerson('V-40100010', 'Dani Centavo');
+    const full = await createPerson('V-40100011', 'Eva Completa');
+    // 1 centavo por 1 día de 15 son 0,067 centavos: redondea a 0.
+    await createAssignment(tiny, project, 1, '2026-01-15', '2026-01-15');
+    await createAssignment(full, project, 10_000, '2026-01-01');
+
+    const res = await generator.post('/api/accruals/generate').send({ periodId: period('2026-01-01').id, projectId: project }).expect(201);
+    expect(res.body.batches[0]).toMatchObject({ activeCount: 1, totalCents: 10_000 });
+
+    const accruals = (await generator.get('/api/accruals').query({ projectId: project }).expect(200)).body.accruals;
+    expect(accruals).toHaveLength(1);
+    expect(accruals[0].person.id).toBe(full);
+    expect(accruals.every((a: { amountCents: number }) => a.amountCents > 0)).toBe(true);
+  });
+
+  it('si todo prorratea a cero, no hay nada por causar', async () => {
+    const project = await createProject('TST-CAU-ZERO2');
+    const tiny = await createPerson('V-40100012', 'Fede Centavo');
+    await createAssignment(tiny, project, 1, '2026-01-15', '2026-01-15');
+    const res = await generator.post('/api/accruals/generate').send({ periodId: period('2026-01-01').id, projectId: project }).expect(409);
+    expect(res.body.error.code).toBe('NOTHING_TO_ACCRUE');
+  });
+});
+
+describe('paginación', () => {
+  it('pagina causaciones y lotes, y los totales cubren todo lo filtrado', async () => {
+    const all = (await generator.get('/api/accruals').query({ projectId }).expect(200)).body;
+    expect(all).toMatchObject({ page: 1, pageSize: 50 });
+    expect(all.total).toBeGreaterThanOrEqual(3);
+
+    const first = (await generator.get('/api/accruals').query({ projectId, pageSize: 2, page: 1 }).expect(200)).body;
+    const second = (await generator.get('/api/accruals').query({ projectId, pageSize: 2, page: 2 }).expect(200)).body;
+    expect(first.accruals).toHaveLength(2);
+    expect(first).toMatchObject({ total: all.total, pageSize: 2, pageCount: Math.ceil(all.total / 2) });
+    expect(second.accruals.length).toBe(all.total - 2 > 2 ? 2 : all.total - 2);
+    // Sin repetidos entre páginas y mismo orden que la lista completa.
+    expect([...first.accruals, ...second.accruals].map((a: { id: number }) => a.id)).toEqual(
+      all.accruals.slice(0, first.accruals.length + second.accruals.length).map((a: { id: number }) => a.id),
+    );
+    // Los totales no dependen de la página pedida.
+    expect(first.totals).toEqual(all.totals);
+    expect(second.totals).toEqual(all.totals);
+
+    const batches = (await generator.get('/api/accruals/batches').query({ projectId, pageSize: 1 }).expect(200)).body;
+    expect(batches.batches).toHaveLength(1);
+    expect(batches).toMatchObject({ pageSize: 1, pageCount: batches.total });
+  });
+
+  it('una página fuera de rango queda vacía y el filtro por estado se aplica antes de paginar', async () => {
+    const beyond = (await generator.get('/api/accruals').query({ projectId, page: 999 }).expect(200)).body;
+    expect(beyond.accruals).toEqual([]);
+    expect(beyond.total).toBeGreaterThan(0);
+
+    const pending = (await generator.get('/api/accruals').query({ projectId, status: 'PENDING', pageSize: 1 }).expect(200)).body;
+    expect(pending.total).toBeGreaterThan(1);
+    expect(pending.accruals).toHaveLength(1);
+    expect(pending.accruals[0].status).toBe('PENDING');
+  });
+
+  it('rechaza tamaños de página inválidos', async () => {
+    await generator.get('/api/accruals').query({ pageSize: 1000 }).expect(400);
+    await generator.get('/api/accruals').query({ page: 0 }).expect(400);
+    await generator.get('/api/accruals/batches').query({ pageSize: 1000 }).expect(400);
+  });
+});
