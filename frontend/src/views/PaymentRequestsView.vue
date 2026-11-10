@@ -25,6 +25,7 @@ import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import { REQUEST_STATUS_TONES } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { formatDate, formatDateTime, formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const canCreate = computed(() => auth.can(PERMISSIONS.PAYMENT_REQUESTS_CREATE));
@@ -39,23 +40,30 @@ const error = ref('');
 const filters = reactive({ projectId: 0, status: '' as '' | RequestStatus });
 
 const today = new Date().toLocaleDateString('sv-SE');
+const route = useRoute();
+const detailEl = ref<HTMLElement | null>(null);
 
-function formatDateTime(value: string | null) {
-  return value ? new Date(value).toLocaleString('es-VE') : '';
-}
+// Al cambiar un filtro se recarga la lista; no hace falta un botón.
+watch(filters, () => void loadRequests());
+
+// Si cambian los filtros mientras hay una consulta en vuelo, solo la última actualiza la lista.
+let loadSeq = 0;
 
 async function loadRequests() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    requests.value = await listPaymentRequests({
+    const result = await listPaymentRequests({
       projectId: filters.projectId || undefined,
       status: filters.status || undefined,
     });
+    if (seq !== loadSeq) return;
+    requests.value = result;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 
@@ -66,6 +74,8 @@ async function load() {
     error.value = errorMessage(e);
   }
   await loadRequests();
+  const id = Number(route.query.id);
+  if (id) await openDetail(id);
 }
 
 // Nueva solicitud: toma toda la deuda pendiente del proyecto.
@@ -120,6 +130,8 @@ async function openDetail(id: number) {
   detailError.value = '';
   try {
     showDetail(await getPaymentRequest(id));
+    await nextTick();
+    detailEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -257,7 +269,7 @@ onMounted(load);
     </div>
   </form>
 
-  <section v-if="detail" class="card section-gap">
+  <section v-if="detail" ref="detailEl" class="card section-gap">
     <div class="page-header">
       <h2>
         Solicitud #{{ detail.id }} · {{ detail.project.code }}
@@ -314,7 +326,7 @@ onMounted(load);
       <button
         v-if="canRegister && detail.status === 'APPROVED'"
         type="button"
-        class="button"
+        :class="['button', { 'button-primary': readyToClose }]"
         @click="prompt = { kind: 'close', text: '' }"
       >
         Cerrar solicitud
@@ -408,7 +420,7 @@ onMounted(load);
           <tr v-for="item in detail.items" :key="item.id">
             <td>{{ item.person.name }}</td>
             <td class="nowrap">
-              {{ item.period.startDate }} al {{ item.period.endDate }}
+              {{ formatRange(item.period.startDate, item.period.endDate) }}
               <span class="permission-code">Causación #{{ item.accrualId }}</span>
             </td>
             <td class="nowrap">{{ item.activeDays }} / {{ item.periodDays }}</td>
@@ -439,7 +451,7 @@ onMounted(load);
           <tr v-for="payment in detail.payments" :key="payment.id">
             <td class="nowrap">#{{ payment.id }}</td>
             <td>{{ payment.person.name }}</td>
-            <td class="nowrap">{{ payment.paidOn }}</td>
+            <td class="nowrap">{{ formatDate(payment.paidOn) }}</td>
             <td class="num">{{ formatUsd(payment.amountCents) }}</td>
             <td>{{ payment.reference }}</td>
             <td>{{ payment.createdBy?.name }}</td>
@@ -469,7 +481,7 @@ onMounted(load);
     </div>
   </section>
 
-  <form class="card form-grid section-gap" @submit.prevent="loadRequests">
+  <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
       Proyecto
       <select v-model.number="filters.projectId">
@@ -484,9 +496,6 @@ onMounted(load);
         <option v-for="(label, value) in REQUEST_STATUS_LABELS" :key="value" :value="value">{{ label }}</option>
       </select>
     </label>
-    <div class="actions">
-      <button type="submit" class="button">Filtrar</button>
-    </div>
   </form>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -510,7 +519,10 @@ onMounted(load);
         <tr v-for="request in requests" :key="request.id">
           <td class="nowrap">#{{ request.id }}</td>
           <td class="nowrap" :title="request.project.name">{{ request.project.code }}</td>
-          <td><StatusBadge :label="REQUEST_STATUS_LABELS[request.status]" :tone="REQUEST_STATUS_TONES[request.status]" /></td>
+          <td>
+            <StatusBadge :label="REQUEST_STATUS_LABELS[request.status]" :tone="REQUEST_STATUS_TONES[request.status]" />
+            <span v-if="request.status === 'APPROVED' && request.outstandingCents === 0" class="permission-code">Pagada, falta cerrar</span>
+          </td>
           <td>{{ request.personCount }}</td>
           <td class="num">{{ formatUsd(request.requestedCents) }}</td>
           <td class="num">{{ formatUsd(request.paidCents) }}</td>

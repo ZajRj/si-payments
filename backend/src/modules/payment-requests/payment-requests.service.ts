@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
 import { businessToday, formatDateOnly } from '../../lib/dates.js';
+import { displayUsd } from '../../lib/money.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { toPeriodRefDto } from '../accruals/accruals.service.js';
@@ -310,7 +311,7 @@ export async function registerPayments(
         throw new HttpError(
           409,
           'AMOUNT_EXCEEDS_DEBT',
-          `El monto supera lo pendiente de la persona en esta solicitud (${(outstanding / 100).toFixed(2)} USD)`,
+          `El monto supera lo pendiente de la persona en esta solicitud (${displayUsd(outstanding)})`,
         );
       }
 

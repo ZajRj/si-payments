@@ -20,6 +20,7 @@ import BalanceStats from '@/components/BalanceStats.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
 import { ACCRUAL_STATUS_TONES } from '@/lib/status';
+import { formatDate, formatRange } from '@/lib/dates';
 
 type Tab = 'balances' | 'payments' | 'statement';
 
@@ -241,7 +242,7 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-for="payment in payments.payments" :key="payment.id">
-            <td class="nowrap">{{ payment.paidOn }}</td>
+            <td class="nowrap">{{ formatDate(payment.paidOn) }}</td>
             <td class="nowrap">#{{ payment.id }}</td>
             <td>
               {{ payment.person.name }}
@@ -290,7 +291,7 @@ onMounted(async () => {
           <tbody>
             <tr v-for="accrual in statement.accruals" :key="accrual.id">
               <td class="nowrap">
-                {{ accrual.period.startDate }} al {{ accrual.period.endDate }}
+                {{ formatRange(accrual.period.startDate, accrual.period.endDate) }}
                 <span class="permission-code">{{ accrual.period.paymentGroup.name }} · Causación #{{ accrual.id }}</span>
               </td>
               <td class="nowrap" :title="accrual.project.name">{{ accrual.project.code }}</td>
@@ -322,7 +323,7 @@ onMounted(async () => {
           </thead>
           <tbody>
             <tr v-for="payment in statement.payments" :key="payment.id">
-              <td class="nowrap">{{ payment.paidOn }}</td>
+              <td class="nowrap">{{ formatDate(payment.paidOn) }}</td>
               <td class="nowrap">#{{ payment.id }}</td>
               <td class="nowrap" :title="payment.project.name">{{ payment.project.code }}</td>
               <td class="num">{{ formatUsd(payment.amountCents) }}</td>

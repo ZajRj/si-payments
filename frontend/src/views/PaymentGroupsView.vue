@@ -19,6 +19,7 @@ import StatusBadge from '@/components/StatusBadge.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { formatDate, formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const canManage = computed(() => auth.can(PERMISSIONS.CATALOGS_MANAGE));
@@ -40,6 +41,8 @@ const periods = ref<Period[]>([]);
 const periodsLoading = ref(false);
 const periodsError = ref('');
 const generating = ref(false);
+// Confirmación en línea para eliminar el último período (sin diálogos nativos del navegador).
+const confirmingRemove = ref(false);
 const generateForm = reactive({ from: '', until: '' });
 
 const nextStart = computed(() => {
@@ -113,6 +116,7 @@ async function save() {
 
 async function showPeriods(group: PaymentGroup) {
   selected.value = group;
+  confirmingRemove.value = false;
   Object.assign(generateForm, { from: '', until: '' });
   await loadPeriods();
 }
@@ -151,7 +155,8 @@ function generate() {
 
 function removeLast() {
   const last = periods.value[periods.value.length - 1];
-  if (!last || !confirm(`¿Eliminar el período ${last.startDate} al ${last.endDate}?`)) return;
+  if (!last) return;
+  confirmingRemove.value = false;
   return runPeriodAction(() => deleteLastPeriod(selected.value!.id));
 }
 
@@ -243,7 +248,7 @@ onMounted(load);
   <section v-if="selected" class="card section-gap">
     <div class="page-header">
       <h2>Períodos de «{{ selected.name }}»</h2>
-      <button type="button" class="button" @click="selected = null">Cerrar</button>
+      <button type="button" class="button" @click="selected = null; confirmingRemove = false">Cerrar</button>
     </div>
 
     <form v-if="canManage && selected.active" class="form-grid" @submit.prevent="generate">
@@ -251,16 +256,23 @@ onMounted(load);
         Inicio del primer período
         <input v-model="generateForm.from" type="date" required />
       </label>
-      <p v-else class="hint">La generación continúa desde el {{ nextStart }}.</p>
+      <p v-else class="hint">La generación continúa desde el {{ formatDate(nextStart) }}.</p>
       <label class="field">
         Generar hasta
         <input v-model="generateForm.until" type="date" required />
       </label>
       <div class="actions">
         <button type="submit" class="button button-primary" :disabled="generating">Generar períodos</button>
-        <button v-if="periods.length > 0" type="button" class="button" :disabled="generating" @click="removeLast">
-          Eliminar último período
-        </button>
+        <template v-if="periods.length > 0 && !confirmingRemove">
+          <button type="button" class="button" :disabled="generating" @click="confirmingRemove = true">Eliminar último período</button>
+        </template>
+        <template v-else-if="periods.length > 0">
+          <span class="hint">
+            ¿Eliminar el período {{ formatRange(periods[periods.length - 1]!.startDate, periods[periods.length - 1]!.endDate) }}?
+          </span>
+          <button type="button" class="button button-primary" :disabled="generating" @click="removeLast">Sí, eliminar</button>
+          <button type="button" class="button" @click="confirmingRemove = false">No</button>
+        </template>
       </div>
     </form>
 
@@ -278,8 +290,8 @@ onMounted(load);
         </thead>
         <tbody>
           <tr v-for="period in periods" :key="period.id">
-            <td>{{ period.startDate }}</td>
-            <td>{{ period.endDate }}</td>
+            <td>{{ formatDate(period.startDate) }}</td>
+            <td>{{ formatDate(period.endDate) }}</td>
             <td>{{ period.days }}</td>
           </tr>
         </tbody>

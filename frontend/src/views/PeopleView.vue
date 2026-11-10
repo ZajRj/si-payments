@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { errorMessage } from '@/api/http';
 import { createPerson, listPeople, updatePerson, type Person } from '@/api/people';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -12,6 +12,14 @@ const canManage = computed(() => auth.can(PERMISSIONS.PEOPLE_MANAGE));
 
 const people = ref<Person[]>([]);
 const search = ref('');
+
+// La lista se filtra mientras se escribe, con una pequeña espera para no consultar en cada tecla.
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+watch(search, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => void load(), 300);
+});
+onBeforeUnmount(() => clearTimeout(searchTimer));
 const loading = ref(true);
 const error = ref('');
 
@@ -21,15 +29,21 @@ const saving = ref(false);
 const formError = ref('');
 const form = reactive({ idNumber: '', name: '', phone: '', email: '', active: true });
 
+// Al escribir rápido pueden quedar varias consultas en vuelo: solo la última actualiza la pantalla.
+let loadSeq = 0;
+
 async function load() {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    people.value = await listPeople({ search: search.value.trim() || undefined });
+    const result = await listPeople({ search: search.value.trim() || undefined });
+    if (seq !== loadSeq) return;
+    people.value = result;
   } catch (e) {
-    error.value = errorMessage(e);
+    if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 
@@ -116,12 +130,11 @@ onMounted(load);
     </div>
   </form>
 
-  <form class="actions section-gap" role="search" @submit.prevent="load">
+  <form class="actions section-gap" role="search" @submit.prevent="load()">
     <label class="field">
       <span class="sr-only">Buscar</span>
       <input v-model="search" type="search" placeholder="Buscar por nombre o cédula" />
     </label>
-    <button type="submit" class="button">Buscar</button>
   </form>
 
   <p v-if="error" class="error section-gap" role="alert">{{ error }}</p>

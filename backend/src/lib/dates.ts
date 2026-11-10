@@ -15,6 +15,12 @@ export function formatDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+// Fecha para mostrar en mensajes al usuario: DD/MM/AAAA, igual que en la interfaz y los PDFs.
+export function displayDate(date: Date): string {
+  const [year, month, day] = formatDateOnly(date).split('-');
+  return `${day}/${month}/${year}`;
+}
+
 // Zona horaria del negocio: define qué día es "hoy" y cómo se interpretan los filtros por fecha,
 // sin importar la zona horaria del servidor (en Docker suele ser UTC).
 export const BUSINESS_TIME_ZONE = 'America/Caracas';

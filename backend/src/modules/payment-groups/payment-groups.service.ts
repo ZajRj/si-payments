@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { addDays, businessToday, formatDateOnly } from '../../lib/dates.js';
+import { addDays, businessToday, displayDate } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { sameName } from '../../lib/names.js';
 import { prisma } from '../../lib/prisma.js';
@@ -89,7 +89,7 @@ export async function generatePeriods(actorId: number, groupId: number, { from, 
       throw new HttpError(
         409,
         'PERIODS_ALREADY_STARTED',
-        `El grupo ya tiene períodos. La generación continúa desde ${formatDateOnly(addDays(last.endDate, 1))}`,
+        `El grupo ya tiene períodos. La generación continúa desde ${displayDate(addDays(last.endDate, 1))}`,
       );
     }
     if (!last && !from) {
@@ -98,7 +98,7 @@ export async function generatePeriods(actorId: number, groupId: number, { from, 
 
     const start = last ? addDays(last.endDate, 1) : from!;
     if (until.getTime() < start.getTime()) {
-      throw new HttpError(400, 'INVALID_RANGE', `La fecha final debe ser igual o posterior a ${formatDateOnly(start)}`);
+      throw new HttpError(400, 'INVALID_RANGE', `La fecha final debe ser igual o posterior a ${displayDate(start)}`);
     }
 
     const rule = normalizeRule(group.frequency as Frequency, group.cutoffDay);

@@ -3,12 +3,13 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { listPaymentRequests, REQUEST_STATUS_LABELS, type PaymentRequestSummary } from '@/api/payment-requests';
+import { listVouchers, monthLabel, VOUCHER_STATUS_LABELS, type Voucher, type VoucherStatus } from '@/api/petty-cash';
 import { getBalances, type BalanceTotals } from '@/api/reports';
 import AppIcon from '@/components/AppIcon.vue';
 import BalanceStats from '@/components/BalanceStats.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
-import { REQUEST_STATUS_TONES } from '@/lib/status';
+import { REQUEST_STATUS_TONES, VOUCHER_STATUS_TONES } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -50,6 +51,18 @@ const decides = computed(() => auth.can(PERMISSIONS.PAYMENT_REQUESTS_DECIDE));
 const totals = ref<BalanceTotals | null>(null);
 const requests = ref<PaymentRequestSummary[]>([]);
 const error = ref('');
+const vouchers = ref<Voucher[]>([]);
+const canSeeVouchers = computed(() => auth.can(PERMISSIONS.PETTY_CASH_READ));
+
+// Vales que esperan acción: el receptor aprueba y desembolsa; el generador rinde lo desembolsado.
+// Se piden al servidor solo los estados pendientes de cada rol, no todos los vales.
+const pendingVoucherStatuses = computed<VoucherStatus[]>(() => (decides.value ? ['REQUESTED', 'APPROVED'] : ['DISBURSED']));
+const pendingVouchers = computed(() => vouchers.value);
+
+async function loadPendingVouchers() {
+  const lists = await Promise.all(pendingVoucherStatuses.value.map((status) => listVouchers({ status })));
+  return lists.flat().sort((a, b) => b.id - a.id);
+}
 
 // Lo que espera una acción del usuario: el receptor decide y entrega; el generador completa borradores.
 const pending = computed(() =>
@@ -68,12 +81,14 @@ const firstName = computed(() => auth.user?.name.split(' ')[0] ?? '');
 
 onMounted(async () => {
   try {
-    const [balances, list] = await Promise.all([
+    const [balances, list, allVouchers] = await Promise.all([
       canReport.value ? getBalances('project', {}) : null,
       canSeeRequests.value ? listPaymentRequests() : [],
+      canSeeVouchers.value ? loadPendingVouchers() : [],
     ]);
     totals.value = balances?.totals ?? null;
     requests.value = list;
+    vouchers.value = allVouchers;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -108,6 +123,7 @@ onMounted(async () => {
             <th scope="col">Estado</th>
             <th scope="col" class="num">Solicitado</th>
             <th scope="col" class="num">Pendiente</th>
+            <th scope="col"><span class="sr-only">Acciones</span></th>
           </tr>
         </thead>
         <tbody>
@@ -117,6 +133,42 @@ onMounted(async () => {
             <td><StatusBadge :label="REQUEST_STATUS_LABELS[request.status]" :tone="REQUEST_STATUS_TONES[request.status]" /></td>
             <td class="num">{{ formatUsd(request.requestedCents) }}</td>
             <td class="num">{{ formatUsd(request.outstandingCents) }}</td>
+            <td>
+              <RouterLink :to="{ name: 'payment-requests', query: { id: request.id } }" class="button">
+                {{ decides ? (request.status === 'SUBMITTED' ? 'Revisar' : request.outstandingCents === 0 ? 'Cerrar' : 'Pagar') : 'Abrir' }}
+              </RouterLink>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section v-if="canSeeVouchers && pendingVouchers.length" class="card section-gap">
+    <div class="page-header">
+      <h2>{{ decides ? 'Vales por aprobar o desembolsar' : 'Vales por rendir' }}</h2>
+      <RouterLink to="/cajas-chicas" class="button">Ver cajas</RouterLink>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Caja</th>
+            <th scope="col">Concepto</th>
+            <th scope="col">Estado</th>
+            <th scope="col" class="num">Monto</th>
+            <th scope="col"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="voucher in pendingVouchers" :key="voucher.id">
+            <td>{{ voucher.fund.name }} <span class="permission-code">{{ monthLabel(voucher.period) }}</span></td>
+            <td>{{ voucher.concept }}</td>
+            <td><StatusBadge :label="VOUCHER_STATUS_LABELS[voucher.status]" :tone="VOUCHER_STATUS_TONES[voucher.status]" /></td>
+            <td class="num">{{ formatUsd(voucher.amountCents) }}</td>
+            <td>
+              <RouterLink :to="{ name: 'petty-cash', query: { fund: voucher.fund.id } }" class="button">Abrir</RouterLink>
+            </td>
           </tr>
         </tbody>
       </table>
