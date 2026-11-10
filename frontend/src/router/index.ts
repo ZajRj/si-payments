@@ -79,6 +79,12 @@ export const router = createRouter({
           meta: { navLabel: 'Cajas chicas', permission: PERMISSIONS.PETTY_CASH_READ },
         },
         {
+          path: 'reportes',
+          name: 'reports',
+          component: () => import('@/views/ReportsView.vue'),
+          meta: { navLabel: 'Reportes', permission: PERMISSIONS.REPORTS_READ },
+        },
+        {
           path: 'areas',
           name: 'areas',
           component: () => import('@/views/AreasView.vue'),
