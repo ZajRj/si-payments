@@ -20,6 +20,7 @@ import { formatUsd } from '@/lib/money';
 import { ACCRUAL_STATUS_TONES } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { formatDateTime, formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const canGenerate = computed(() => auth.can(PERMISSIONS.ACCRUALS_GENERATE));
@@ -76,6 +77,8 @@ async function loadData() {
     loading.value = false;
   }
 }
+
+watch(filters, () => loadData());
 
 async function load() {
   try {
@@ -206,7 +209,7 @@ onMounted(load);
       <select v-model.number="form.periodId" required :disabled="!form.paymentGroupId">
         <option :value="0" disabled>Selecciona un período</option>
         <option v-for="period in closedPeriods" :key="period.id" :value="period.id">
-          {{ period.startDate }} al {{ period.endDate }} ({{ period.days }} días)
+          {{ formatRange(period.startDate, period.endDate) }} ({{ period.days }} días)
         </option>
       </select>
       <span class="hint">Solo aparecen los períodos que ya cerraron.</span>
@@ -231,11 +234,11 @@ onMounted(load);
   <form v-if="annulTarget" class="card form-grid section-gap" @submit.prevent="saveAnnul">
     <h2 v-if="annulTarget.type === 'accrual'">
       Anular causación #{{ annulTarget.accrual.id }} · {{ annulTarget.accrual.person.name }},
-      {{ annulTarget.accrual.period.startDate }} al {{ annulTarget.accrual.period.endDate }}
+      {{ formatRange(annulTarget.accrual.period.startDate, annulTarget.accrual.period.endDate) }}
     </h2>
     <h2 v-else>
       Anular lote #{{ annulTarget.batch.id }} · {{ annulTarget.batch.project.code }},
-      {{ annulTarget.batch.period.startDate }} al {{ annulTarget.batch.period.endDate }}
+      {{ formatRange(annulTarget.batch.period.startDate, annulTarget.batch.period.endDate) }}
     </h2>
     <label class="field">
       Motivo
@@ -249,7 +252,7 @@ onMounted(load);
     </div>
   </form>
 
-  <form class="card form-grid section-gap" @submit.prevent="loadData">
+  <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
       Proyecto
       <select v-model.number="filters.projectId">
@@ -269,7 +272,7 @@ onMounted(load);
       <select v-model.number="filters.periodId" :disabled="!filters.paymentGroupId">
         <option :value="0">Todos</option>
         <option v-for="period in filterPeriods" :key="period.id" :value="period.id">
-          {{ period.startDate }} al {{ period.endDate }}
+          {{ formatRange(period.startDate, period.endDate) }}
         </option>
       </select>
     </label>
@@ -288,9 +291,6 @@ onMounted(load);
         <option v-for="(label, value) in ACCRUAL_STATUS_LABELS" :key="value" :value="value">{{ label }}</option>
       </select>
     </label>
-    <div class="actions">
-      <button type="submit" class="button">Filtrar</button>
-    </div>
   </form>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -315,14 +315,14 @@ onMounted(load);
             <td class="nowrap">#{{ batch.id }}</td>
             <td class="nowrap" :title="batch.project.name">{{ batch.project.code }}</td>
             <td class="nowrap">
-              {{ batch.period.startDate }} al {{ batch.period.endDate }}
+              {{ formatRange(batch.period.startDate, batch.period.endDate) }}
               <span class="permission-code">{{ batch.period.paymentGroup.name }}</span>
             </td>
             <td>{{ batch.activeCount }} de {{ batch.accrualCount }}</td>
             <td class="num">{{ formatUsd(batch.totalCents) }}</td>
             <td>
               {{ batch.createdBy.name }}
-              <span class="permission-code">{{ new Date(batch.createdAt).toLocaleString('es-VE') }}</span>
+              <span class="permission-code">{{ formatDateTime(batch.createdAt) }}</span>
             </td>
             <td v-if="canGenerate">
               <button
@@ -371,7 +371,7 @@ onMounted(load);
             </td>
             <td class="nowrap" :title="accrual.project.name">{{ accrual.project.code }}</td>
             <td class="nowrap">
-              {{ accrual.period.startDate }} al {{ accrual.period.endDate }}
+              {{ formatRange(accrual.period.startDate, accrual.period.endDate) }}
               <span class="permission-code">Lote #{{ accrual.batchId }}</span>
             </td>
             <td class="nowrap">{{ accrual.activeDays }} / {{ accrual.periodDays }}</td>

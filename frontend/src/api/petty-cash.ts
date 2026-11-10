@@ -68,7 +68,7 @@ export type Voucher = {
 };
 
 export function monthLabel({ year, month }: { year: number; month: number }) {
-  return `${year}-${String(month).padStart(2, '0')}`;
+  return `${String(month).padStart(2, '0')}/${year}`;
 }
 
 export async function listFunds() {

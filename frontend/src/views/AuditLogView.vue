@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { listAuditEntries, type AuditEntry, type AuditPage } from '@/api/audit';
 import { errorMessage } from '@/api/http';
+import { formatDateTime, formatIfDate } from '@/lib/dates';
 
 const ENTITIES: Record<string, string> = {
   User: 'Usuarios',
@@ -12,6 +13,13 @@ const ENTITIES: Record<string, string> = {
   Person: 'Personas',
   Project: 'Proyectos',
   Assignment: 'Asignaciones',
+  Accrual: 'Causaciones',
+  AccrualBatch: 'Lotes de causación',
+  PaymentRequest: 'Solicitudes de pago',
+  Payment: 'Pagos',
+  PettyCashFund: 'Cajas chicas',
+  PettyCashPeriod: 'Meses de caja chica',
+  PettyCashVoucher: 'Vales de caja chica',
 };
 
 const ACTIONS: Record<AuditEntry['action'], string> = {
@@ -43,7 +51,8 @@ async function load(page = 1) {
 }
 
 function formatValue(value: unknown) {
-  return value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value);
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  return formatIfDate(String(value));
 }
 
 function changes(entry: AuditEntry) {
@@ -104,7 +113,7 @@ onMounted(() => load());
         </thead>
         <tbody>
           <tr v-for="entry in result.entries" :key="entry.id">
-            <td class="nowrap">{{ new Date(entry.createdAt).toLocaleString('es-VE') }}</td>
+            <td class="nowrap">{{ formatDateTime(entry.createdAt) }}</td>
             <td>{{ entry.user?.name ?? 'Sistema' }}</td>
             <td>{{ ACTIONS[entry.action] }}</td>
             <td class="nowrap">{{ ENTITIES[entry.entity] ?? entry.entity }} #{{ entry.entityId }}</td>

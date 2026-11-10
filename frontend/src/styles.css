@@ -965,3 +965,34 @@ td small {
   height: auto;
   min-height: 80px;
 }
+
+/* Parámetros: un campo por tarjeta, con ancho cómodo para textos largos. */
+.settings-form {
+  grid-template-columns: minmax(0, 40rem);
+}
+
+/* En pantallas angostas las tablas se desplazan en horizontal en vez de comprimirse. */
+@media (max-width: 640px) {
+  .table-wrapper table {
+    min-width: 36rem;
+  }
+
+  .table-wrapper td:first-child {
+    min-width: 7rem;
+  }
+}
+
+/* Aviso destacado dentro de una tarjeta (por ejemplo, solicitud pagada por completo). */
+.notice {
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.notice-success {
+  color: #0b5a45;
+  background: #e8f5ef;
+  border-color: #b7dfcd;
+}

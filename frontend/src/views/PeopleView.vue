@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { errorMessage } from '@/api/http';
 import { createPerson, listPeople, updatePerson, type Person } from '@/api/people';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -12,6 +12,14 @@ const canManage = computed(() => auth.can(PERMISSIONS.PEOPLE_MANAGE));
 
 const people = ref<Person[]>([]);
 const search = ref('');
+
+// La lista se filtra mientras se escribe, con una pequeña espera para no consultar en cada tecla.
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+watch(search, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => load(), 300);
+});
+onBeforeUnmount(() => clearTimeout(searchTimer));
 const loading = ref(true);
 const error = ref('');
 
@@ -116,12 +124,11 @@ onMounted(load);
     </div>
   </form>
 
-  <form class="actions section-gap" role="search" @submit.prevent="load">
+  <form class="actions section-gap" role="search" @submit.prevent="load()">
     <label class="field">
       <span class="sr-only">Buscar</span>
       <input v-model="search" type="search" placeholder="Buscar por nombre o cédula" />
     </label>
-    <button type="submit" class="button">Buscar</button>
   </form>
 
   <p v-if="error" class="error section-gap" role="alert">{{ error }}</p>

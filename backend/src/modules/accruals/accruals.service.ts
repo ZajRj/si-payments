@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { businessToday, formatDateOnly } from '../../lib/dates.js';
+import { businessToday, displayDate, formatDateOnly } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { openRequestByAccrual, paidByAccrual } from './ledger.js';
@@ -123,7 +123,7 @@ export async function generateAccruals(actorId: number, { periodId, projectId }:
       throw new HttpError(
         409,
         'PERIOD_NOT_ENDED',
-        `El período cierra el ${formatDateOnly(period.endDate)}. Se puede causar a partir de ese día`,
+        `El período cierra el ${displayDate(period.endDate)}. Se puede causar a partir de ese día`,
       );
     }
     if (projectId !== undefined && !(await tx.project.findUnique({ where: { id: projectId } }))) {
@@ -292,7 +292,7 @@ export async function assertAccrualsUnaffected(
       throw new HttpError(
         409,
         'ASSIGNMENT_HAS_ACCRUALS',
-        `El cambio altera días ya causados en el período del ${formatDateOnly(accrual.period.startDate)} al ${formatDateOnly(accrual.period.endDate)}. Anula esa causación antes de cambiar la asignación`,
+        `El cambio altera días ya causados en el período del ${displayDate(accrual.period.startDate)} al ${displayDate(accrual.period.endDate)}. Anula esa causación antes de cambiar la asignación`,
       );
     }
   }
