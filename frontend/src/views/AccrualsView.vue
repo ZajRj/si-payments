@@ -95,7 +95,10 @@ async function loadBatches(page = batchPaging.page) {
 }
 
 // `reset` vuelve a la primera página de ambas tablas (filtros nuevos o lote recién generado).
+let loadSeq = 0;
+
 async function loadData(reset = false) {
+  const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
@@ -104,6 +107,7 @@ async function loadData(reset = false) {
       batchPaging.page = 1;
     }
     await Promise.all([loadAccruals(), loadBatches()]);
+    if (seq !== loadSeq) return;
   } catch (e) {
     if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
