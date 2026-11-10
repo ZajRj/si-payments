@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { listAreas, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
 import { createProject, listProjects, SCOPE_LABELS, updateProject, type Project, type Scope } from '@/api/projects';
+import StatusBadge from '@/components/StatusBadge.vue';
+import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -172,7 +174,7 @@ onMounted(load);
               {{ project.assignmentCount }}
             </RouterLink>
           </td>
-          <td>{{ project.active ? 'Activo' : 'Inactivo' }}</td>
+          <td><StatusBadge :label="project.active ? 'Activo' : 'Inactivo'" :tone="activeTone(project.active)" /></td>
           <td v-if="canManage">
             <button type="button" class="button" @click="openEdit(project)">Editar</button>
           </td>

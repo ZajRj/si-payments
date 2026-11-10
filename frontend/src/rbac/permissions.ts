@@ -12,4 +12,13 @@ export const PERMISSIONS = {
   PROJECTS_READ: 'projects:read',
   PROJECTS_MANAGE: 'projects:manage',
   ASSIGNMENTS_MANAGE: 'assignments:manage',
+  PAYROLL_READ: 'payroll:read',
+  ACCRUALS_GENERATE: 'accruals:generate',
+  PAYMENT_REQUESTS_CREATE: 'payment-requests:create',
+  PAYMENT_REQUESTS_DECIDE: 'payment-requests:decide',
+  PAYMENTS_REGISTER: 'payments:register',
+  PETTY_CASH_READ: 'petty-cash:read',
+  PETTY_CASH_REQUEST: 'petty-cash:request',
+  PETTY_CASH_MANAGE: 'petty-cash:manage',
+  REPORTS_READ: 'reports:read',
 } as const;
