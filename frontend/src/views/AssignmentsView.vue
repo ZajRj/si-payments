@@ -12,7 +12,9 @@ import { errorMessage } from '@/api/http';
 import { listPaymentGroups, type PaymentGroup } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
+import type { Tone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -48,7 +50,11 @@ function canChangeAmount(assignment: Assignment) {
   return nextDay(assignment.startDate) <= assignment.effectiveEndDate;
 }
 
-function status(assignment: Assignment) {
+type AssignmentStatus = 'Futura' | 'Finalizada' | 'Vigente';
+
+const STATUS_TONES: Record<AssignmentStatus, Tone> = { Futura: 'info', Finalizada: 'neutral', Vigente: 'success' };
+
+function status(assignment: Assignment): AssignmentStatus {
   if (assignment.startDate > today) return 'Futura';
   if (assignment.effectiveEndDate < today) return 'Finalizada';
   return 'Vigente';
@@ -327,7 +333,7 @@ onMounted(load);
           <th scope="col">Persona</th>
           <th scope="col">Proyecto</th>
           <th scope="col">Grupo de pago</th>
-          <th scope="col">Monto por período</th>
+          <th scope="col" class="num">Monto por período</th>
           <th scope="col">Desde</th>
           <th scope="col">Hasta</th>
           <th scope="col">Estado</th>
@@ -342,13 +348,13 @@ onMounted(load);
           </td>
           <td class="nowrap" :title="assignment.project.name">{{ assignment.project.code }}</td>
           <td>{{ assignment.paymentGroup.name }}</td>
-          <td class="nowrap">{{ formatUsd(assignment.amountCents) }}</td>
+          <td class="num">{{ formatUsd(assignment.amountCents) }}</td>
           <td class="nowrap">{{ assignment.startDate }}</td>
           <td class="nowrap">
             {{ assignment.effectiveEndDate }}
             <span v-if="assignment.endDate === null" class="permission-code">fin del proyecto</span>
           </td>
-          <td>{{ status(assignment) }}</td>
+          <td><StatusBadge :label="status(assignment)" :tone="STATUS_TONES[status(assignment)]" /></td>
           <td v-if="canManage">
             <div class="actions">
               <button

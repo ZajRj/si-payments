@@ -20,7 +20,9 @@ import {
 } from '@/api/payment-requests';
 import { listProjects, type Project } from '@/api/projects';
 import { paymentRequestPdfUrl, receiptPdfUrl } from '@/api/reports';
+import StatusBadge from '@/components/StatusBadge.vue';
 import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
+import { REQUEST_STATUS_TONES } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -243,7 +245,8 @@ onMounted(load);
   <section v-if="detail" class="card section-gap">
     <div class="page-header">
       <h2>
-        Solicitud #{{ detail.id }} · {{ detail.project.code }} · {{ REQUEST_STATUS_LABELS[detail.status] }}
+        Solicitud #{{ detail.id }} · {{ detail.project.code }}
+        <StatusBadge :label="REQUEST_STATUS_LABELS[detail.status]" :tone="REQUEST_STATUS_TONES[detail.status]" />
       </h2>
       <button type="button" class="button" @click="detail = null">Cerrar detalle</button>
     </div>
@@ -330,9 +333,9 @@ onMounted(load);
           <thead>
             <tr>
               <th scope="col">Persona</th>
-              <th scope="col">Solicitado</th>
-              <th scope="col">Pagado</th>
-              <th scope="col">Pendiente</th>
+              <th scope="col" class="num">Solicitado</th>
+              <th scope="col" class="num">Pagado</th>
+              <th scope="col" class="num">Pendiente</th>
               <th v-if="canRegister && detail.status === 'APPROVED'" scope="col">Entregar (USD)</th>
             </tr>
           </thead>
@@ -342,9 +345,9 @@ onMounted(load);
                 {{ entry.person.name }}
                 <span class="permission-code">{{ entry.person.idNumber }}</span>
               </td>
-              <td class="nowrap">{{ formatUsd(entry.requestedCents) }}</td>
-              <td class="nowrap">{{ formatUsd(entry.paidCents) }}</td>
-              <td class="nowrap">{{ formatUsd(entry.outstandingCents) }}</td>
+              <td class="num">{{ formatUsd(entry.requestedCents) }}</td>
+              <td class="num">{{ formatUsd(entry.paidCents) }}</td>
+              <td class="num">{{ formatUsd(entry.outstandingCents) }}</td>
               <td v-if="canRegister && detail.status === 'APPROVED'" class="field">
                 <input
                   v-model="paymentForm.amounts[entry.person.id]"
@@ -381,9 +384,9 @@ onMounted(load);
             <th scope="col">Persona</th>
             <th scope="col">Período</th>
             <th scope="col">Días</th>
-            <th scope="col">Solicitado</th>
-            <th scope="col">Pagado</th>
-            <th scope="col">Pendiente</th>
+            <th scope="col" class="num">Solicitado</th>
+            <th scope="col" class="num">Pagado</th>
+            <th scope="col" class="num">Pendiente</th>
           </tr>
         </thead>
         <tbody>
@@ -394,9 +397,9 @@ onMounted(load);
               <span class="permission-code">Causación #{{ item.accrualId }}</span>
             </td>
             <td class="nowrap">{{ item.activeDays }} / {{ item.periodDays }}</td>
-            <td class="nowrap">{{ formatUsd(item.requestedCents) }}</td>
-            <td class="nowrap">{{ formatUsd(item.paidCents) }}</td>
-            <td class="nowrap">{{ formatUsd(item.outstandingCents) }}</td>
+            <td class="num">{{ formatUsd(item.requestedCents) }}</td>
+            <td class="num">{{ formatUsd(item.paidCents) }}</td>
+            <td class="num">{{ formatUsd(item.outstandingCents) }}</td>
           </tr>
         </tbody>
       </table>
@@ -410,7 +413,7 @@ onMounted(load);
             <th scope="col">Recibo</th>
             <th scope="col">Persona</th>
             <th scope="col">Fecha</th>
-            <th scope="col">Monto</th>
+            <th scope="col" class="num">Monto</th>
             <th scope="col">Referencia</th>
             <th scope="col">Registrado por</th>
             <th scope="col">Estado</th>
@@ -422,11 +425,11 @@ onMounted(load);
             <td class="nowrap">#{{ payment.id }}</td>
             <td>{{ payment.person.name }}</td>
             <td class="nowrap">{{ payment.paidOn }}</td>
-            <td class="nowrap">{{ formatUsd(payment.amountCents) }}</td>
+            <td class="num">{{ formatUsd(payment.amountCents) }}</td>
             <td>{{ payment.reference }}</td>
             <td>{{ payment.createdBy?.name }}</td>
             <td>
-              {{ payment.annulledAt ? 'Anulado' : 'Vigente' }}
+              <StatusBadge :label="payment.annulledAt ? 'Anulado' : 'Vigente'" :tone="payment.annulledAt ? 'danger' : 'success'" />
               <span v-if="payment.annulmentReason" class="permission-code">{{ payment.annulmentReason }}</span>
             </td>
             <td v-if="canRegister || canReport" class="actions">
@@ -481,9 +484,9 @@ onMounted(load);
           <th scope="col">Proyecto</th>
           <th scope="col">Estado</th>
           <th scope="col">Personas</th>
-          <th scope="col">Solicitado</th>
-          <th scope="col">Pagado</th>
-          <th scope="col">Pendiente</th>
+          <th scope="col" class="num">Solicitado</th>
+          <th scope="col" class="num">Pagado</th>
+          <th scope="col" class="num">Pendiente</th>
           <th scope="col">Creada</th>
           <th scope="col"><span class="sr-only">Acciones</span></th>
         </tr>
@@ -492,11 +495,11 @@ onMounted(load);
         <tr v-for="request in requests" :key="request.id">
           <td class="nowrap">#{{ request.id }}</td>
           <td class="nowrap" :title="request.project.name">{{ request.project.code }}</td>
-          <td>{{ REQUEST_STATUS_LABELS[request.status] }}</td>
+          <td><StatusBadge :label="REQUEST_STATUS_LABELS[request.status]" :tone="REQUEST_STATUS_TONES[request.status]" /></td>
           <td>{{ request.personCount }}</td>
-          <td class="nowrap">{{ formatUsd(request.requestedCents) }}</td>
-          <td class="nowrap">{{ formatUsd(request.paidCents) }}</td>
-          <td class="nowrap">{{ formatUsd(request.outstandingCents) }}</td>
+          <td class="num">{{ formatUsd(request.requestedCents) }}</td>
+          <td class="num">{{ formatUsd(request.paidCents) }}</td>
+          <td class="num">{{ formatUsd(request.outstandingCents) }}</td>
           <td>
             {{ request.createdBy?.name }}
             <span class="permission-code">{{ formatDateTime(request.createdAt) }}</span>

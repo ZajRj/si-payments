@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import type { IconName } from '@/components/AppIcon.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
@@ -8,6 +9,9 @@ declare module 'vue-router' {
     public?: boolean;
     permission?: string;
     navLabel?: string;
+    navIcon?: IconName;
+    // Sección de la barra lateral; sin grupo va arriba de todo.
+    navGroup?: string;
   }
 }
 
@@ -28,85 +32,85 @@ export const router = createRouter({
           path: '',
           name: 'dashboard',
           component: () => import('@/views/DashboardView.vue'),
-          meta: { navLabel: 'Inicio' },
+          meta: { navLabel: 'Inicio', navIcon: 'home' },
         },
         {
           path: 'usuarios',
           name: 'users',
           component: () => import('@/views/UsersView.vue'),
-          meta: { navLabel: 'Usuarios', permission: PERMISSIONS.USERS_READ },
+          meta: { navLabel: 'Usuarios', navIcon: 'users', navGroup: 'Administración', permission: PERMISSIONS.USERS_READ },
         },
         {
           path: 'roles',
           name: 'roles',
           component: () => import('@/views/RolesView.vue'),
-          meta: { navLabel: 'Roles y permisos', permission: PERMISSIONS.ROLES_READ },
+          meta: { navLabel: 'Roles y permisos', navIcon: 'shield', navGroup: 'Administración', permission: PERMISSIONS.ROLES_READ },
         },
         {
           path: 'personas',
           name: 'people',
           component: () => import('@/views/PeopleView.vue'),
-          meta: { navLabel: 'Personas', permission: PERMISSIONS.PEOPLE_READ },
+          meta: { navLabel: 'Personas', navIcon: 'person', navGroup: 'Operación', permission: PERMISSIONS.PEOPLE_READ },
         },
         {
           path: 'proyectos',
           name: 'projects',
           component: () => import('@/views/ProjectsView.vue'),
-          meta: { navLabel: 'Proyectos', permission: PERMISSIONS.PROJECTS_READ },
+          meta: { navLabel: 'Proyectos', navIcon: 'folder', navGroup: 'Operación', permission: PERMISSIONS.PROJECTS_READ },
         },
         {
           path: 'asignaciones',
           name: 'assignments',
           component: () => import('@/views/AssignmentsView.vue'),
-          meta: { navLabel: 'Asignaciones', permission: PERMISSIONS.PROJECTS_READ },
+          meta: { navLabel: 'Asignaciones', navIcon: 'link', navGroup: 'Operación', permission: PERMISSIONS.PROJECTS_READ },
         },
         {
           path: 'causacion',
           name: 'accruals',
           component: () => import('@/views/AccrualsView.vue'),
-          meta: { navLabel: 'Causación', permission: PERMISSIONS.PAYROLL_READ },
+          meta: { navLabel: 'Causación', navIcon: 'calculator', navGroup: 'Nómina', permission: PERMISSIONS.PAYROLL_READ },
         },
         {
           path: 'solicitudes-de-pago',
           name: 'payment-requests',
           component: () => import('@/views/PaymentRequestsView.vue'),
-          meta: { navLabel: 'Solicitudes de pago', permission: PERMISSIONS.PAYROLL_READ },
+          meta: { navLabel: 'Solicitudes de pago', navIcon: 'send', navGroup: 'Nómina', permission: PERMISSIONS.PAYROLL_READ },
         },
         {
           path: 'cajas-chicas',
           name: 'petty-cash',
           component: () => import('@/views/PettyCashView.vue'),
-          meta: { navLabel: 'Cajas chicas', permission: PERMISSIONS.PETTY_CASH_READ },
+          meta: { navLabel: 'Cajas chicas', navIcon: 'wallet', navGroup: 'Nómina', permission: PERMISSIONS.PETTY_CASH_READ },
         },
         {
           path: 'reportes',
           name: 'reports',
           component: () => import('@/views/ReportsView.vue'),
-          meta: { navLabel: 'Reportes', permission: PERMISSIONS.REPORTS_READ },
+          meta: { navLabel: 'Reportes', navIcon: 'chart', navGroup: 'Nómina', permission: PERMISSIONS.REPORTS_READ },
         },
         {
           path: 'areas',
           name: 'areas',
           component: () => import('@/views/AreasView.vue'),
-          meta: { navLabel: 'Áreas', permission: PERMISSIONS.CATALOGS_READ },
+          meta: { navLabel: 'Áreas', navIcon: 'grid', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
         },
         {
           path: 'grupos-de-pago',
           name: 'payment-groups',
           component: () => import('@/views/PaymentGroupsView.vue'),
-          meta: { navLabel: 'Grupos de pago', permission: PERMISSIONS.CATALOGS_READ },
+          meta: { navLabel: 'Grupos de pago', navIcon: 'calendar', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
         },
         {
           path: 'parametros',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
-          meta: { navLabel: 'Parámetros', permission: PERMISSIONS.SETTINGS_MANAGE },
+          meta: { navLabel: 'Parámetros', navIcon: 'settings', navGroup: 'Administración', permission: PERMISSIONS.SETTINGS_MANAGE },
         },
         {
           path: 'auditoria',
           name: 'audit-log',
           component: () => import('@/views/AuditLogView.vue'),
-          meta: { navLabel: 'Auditoría', permission: PERMISSIONS.AUDIT_READ },
+          meta: { navLabel: 'Auditoría', navIcon: 'history', navGroup: 'Administración', permission: PERMISSIONS.AUDIT_READ },
         },
         {
           path: 'sin-acceso',

@@ -15,6 +15,8 @@ import {
   type PaymentGroup,
   type Period,
 } from '@/api/payment-groups';
+import StatusBadge from '@/components/StatusBadge.vue';
+import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -226,7 +228,7 @@ onMounted(load);
           <td>{{ FREQUENCY_LABELS[group.frequency] }}</td>
           <td>{{ describeCutoff(group) }}</td>
           <td>{{ group.periodCount }}</td>
-          <td>{{ group.active ? 'Activo' : 'Inactivo' }}</td>
+          <td><StatusBadge :label="group.active ? 'Activo' : 'Inactivo'" :tone="activeTone(group.active)" /></td>
           <td>
             <div class="actions">
               <button type="button" class="button" @click="showPeriods(group)">Períodos</button>

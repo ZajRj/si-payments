@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import { listRoles, type Role } from '@/api/roles';
 import { createUser, listUsers, updateUser, type User } from '@/api/users';
+import StatusBadge from '@/components/StatusBadge.vue';
+import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
@@ -143,7 +145,7 @@ onMounted(load);
           <td>{{ user.name }}</td>
           <td>{{ user.email }}</td>
           <td>{{ user.role.name }}</td>
-          <td>{{ user.active ? 'Activo' : 'Inactivo' }}</td>
+          <td><StatusBadge :label="user.active ? 'Activo' : 'Inactivo'" :tone="activeTone(user.active)" /></td>
           <td v-if="canManage">
             <button type="button" class="button" @click="openEdit(user)">Editar</button>
           </td>
