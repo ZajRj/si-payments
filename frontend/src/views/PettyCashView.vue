@@ -118,6 +118,8 @@ async function loadVouchers() {
 
 async function selectFund(id: number, periodId?: number) {
   detailError.value = '';
+  // La confirmación de cierre es de una caja concreta: no debe pasar a otra al cambiar de caja.
+  if (selected.value?.id !== id) confirmingClose.value = false;
   try {
     funds.value = await listFunds();
     selected.value = funds.value.find((fund) => fund.id === id) ?? null;
@@ -281,7 +283,7 @@ onMounted(async () => {
   <section v-if="selected" ref="detailEl" class="card section-gap">
     <div class="page-header">
       <h2>{{ selected.name }} · {{ selected.project.code }}</h2>
-      <button type="button" class="button" @click="selected = null">Cerrar detalle</button>
+      <button type="button" class="button" @click="selected = null; confirmingClose = false">Cerrar detalle</button>
     </div>
 
     <template v-if="selected.openPeriod">

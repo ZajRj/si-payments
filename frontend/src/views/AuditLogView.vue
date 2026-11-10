@@ -51,7 +51,10 @@ async function load(page = 1) {
 }
 
 function formatValue(value: unknown) {
-  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  // También se formatean las fechas dentro de objetos y listas (por ejemplo, los períodos de una solicitud).
+  if (value !== null && typeof value === 'object') {
+    return JSON.stringify(value, (_key, inner) => (typeof inner === 'string' ? formatIfDate(inner) : inner));
+  }
   return formatIfDate(String(value));
 }
 
