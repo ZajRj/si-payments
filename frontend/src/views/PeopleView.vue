@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { errorMessage } from '@/api/http';
 import { createPerson, listPeople, updatePerson, type Person } from '@/api/people';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
@@ -101,34 +102,39 @@ onMounted(load);
   </div>
   <p class="hint">Personal que cobra asignaciones. No tiene usuario en el sistema.</p>
 
-  <form v-if="formOpen" class="card form-grid section-gap" @submit.prevent="save">
-    <h2>{{ editingId === null ? 'Nueva persona' : 'Editar persona' }}</h2>
-    <label class="field">
-      Cédula
-      <input v-model="form.idNumber" required placeholder="V-12345678" maxlength="12" />
-    </label>
-    <label class="field">
-      Nombre completo
-      <input v-model="form.name" required maxlength="120" />
-    </label>
-    <label class="field">
-      Teléfono (opcional)
-      <input v-model="form.phone" maxlength="30" />
-    </label>
-    <label class="field">
-      Email (opcional)
-      <input v-model="form.email" type="email" />
-    </label>
-    <label v-if="editingId !== null" class="checkbox">
-      <input v-model="form.active" type="checkbox" />
-      Persona activa
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
+  <AppModal
+    :open="formOpen"
+    :title="editingId === null ? 'Nueva persona' : 'Editar persona'"
+    @close="formOpen = false"
+  >
+    <form class="form-grid" @submit.prevent="save">
+      <label class="field">
+        Cédula
+        <input v-model="form.idNumber" required placeholder="V-12345678" maxlength="12" />
+      </label>
+      <label class="field">
+        Nombre completo
+        <input v-model="form.name" required maxlength="120" />
+      </label>
+      <label class="field">
+        Teléfono (opcional)
+        <input v-model="form.phone" maxlength="30" />
+      </label>
+      <label class="field">
+        Email (opcional)
+        <input v-model="form.email" type="email" />
+      </label>
+      <label v-if="editingId !== null" class="checkbox">
+        <input v-model="form.active" type="checkbox" />
+        Persona activa
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
 
   <form class="actions section-gap" role="search" @submit.prevent="load()">
     <label class="field">

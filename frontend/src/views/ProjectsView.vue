@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { listAreas, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
 import { createProject, listProjects, SCOPE_LABELS, updateProject, type Project, type Scope } from '@/api/projects';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
@@ -106,46 +107,51 @@ onMounted(load);
     <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">Nuevo proyecto</button>
   </div>
 
-  <form v-if="formOpen" class="card form-grid" @submit.prevent="save">
-    <h2>{{ editingId === null ? 'Nuevo proyecto' : 'Editar proyecto' }}</h2>
-    <label class="field">
-      Código
-      <input v-model="form.code" required maxlength="20" placeholder="FIS-001" />
-    </label>
-    <label class="field">
-      Nombre
-      <input v-model="form.name" required maxlength="120" />
-    </label>
-    <label class="field">
-      Área
-      <select v-model.number="form.areaId" required>
-        <option v-for="area in areaOptions" :key="area.id" :value="area.id">{{ area.name }}</option>
-      </select>
-    </label>
-    <label class="field">
-      Ámbito
-      <select v-model="form.scope">
-        <option v-for="(label, value) in SCOPE_LABELS" :key="value" :value="value">{{ label }}</option>
-      </select>
-    </label>
-    <label class="field">
-      Inicio de la vigencia
-      <input v-model="form.startDate" type="date" required />
-    </label>
-    <label class="field">
-      Fin de la vigencia
-      <input v-model="form.endDate" type="date" required :min="form.startDate" />
-    </label>
-    <label v-if="editingId !== null" class="checkbox">
-      <input v-model="form.active" type="checkbox" />
-      Proyecto activo
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
+  <AppModal
+    :open="formOpen"
+    :title="editingId === null ? 'Nuevo proyecto' : 'Editar proyecto'"
+    @close="formOpen = false"
+  >
+    <form class="form-grid" @submit.prevent="save">
+      <label class="field">
+        Código
+        <input v-model="form.code" required maxlength="20" placeholder="FIS-001" />
+      </label>
+      <label class="field">
+        Nombre
+        <input v-model="form.name" required maxlength="120" />
+      </label>
+      <label class="field">
+        Área
+        <select v-model.number="form.areaId" required>
+          <option v-for="area in areaOptions" :key="area.id" :value="area.id">{{ area.name }}</option>
+        </select>
+      </label>
+      <label class="field">
+        Ámbito
+        <select v-model="form.scope">
+          <option v-for="(label, value) in SCOPE_LABELS" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </label>
+      <label class="field">
+        Inicio de la vigencia
+        <input v-model="form.startDate" type="date" required />
+      </label>
+      <label class="field">
+        Fin de la vigencia
+        <input v-model="form.endDate" type="date" required :min="form.startDate" />
+      </label>
+      <label v-if="editingId !== null" class="checkbox">
+        <input v-model="form.active" type="checkbox" />
+        Proyecto activo
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>

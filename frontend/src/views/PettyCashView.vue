@@ -23,6 +23,7 @@ import {
   type Voucher,
 } from '@/api/petty-cash';
 import { listProjects, type Project } from '@/api/projects';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd, parseUsd } from '@/lib/money';
 import { VOUCHER_STATUS_TONES, activeTone } from '@/lib/status';
@@ -254,31 +255,36 @@ onMounted(async () => {
     con comprobante) y cierre. El saldo final pasa al mes siguiente.
   </p>
 
-  <form v-if="formOpen" class="card form-grid section-gap" @submit.prevent="saveFund">
-    <h2>{{ editing ? `Editar ${editing.name}` : 'Nueva caja chica' }}</h2>
-    <label class="field">
-      Nombre
-      <input v-model="form.name" required maxlength="80" />
-    </label>
-    <label class="field">
-      Proyecto
-      <select v-model.number="form.projectId" required>
-        <option :value="0" disabled>Selecciona un proyecto</option>
-        <option v-for="project in activeProjects" :key="project.id" :value="project.id">
-          {{ project.code }} · {{ project.name }}
-        </option>
-      </select>
-    </label>
-    <label v-if="editing" class="checkbox">
-      <input v-model="form.active" type="checkbox" />
-      Activa
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
+  <AppModal
+    :open="formOpen"
+    :title="editing ? `Editar ${editing.name}` : 'Nueva caja chica'"
+    @close="formOpen = false"
+  >
+    <form class="form-grid" @submit.prevent="saveFund">
+      <label class="field">
+        Nombre
+        <input v-model="form.name" required maxlength="80" />
+      </label>
+      <label class="field">
+        Proyecto
+        <select v-model.number="form.projectId" required>
+          <option :value="0" disabled>Selecciona un proyecto</option>
+          <option v-for="project in activeProjects" :key="project.id" :value="project.id">
+            {{ project.code }} · {{ project.name }}
+          </option>
+        </select>
+      </label>
+      <label v-if="editing" class="checkbox">
+        <input v-model="form.active" type="checkbox" />
+        Activa
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
 
   <section v-if="selected" ref="detailEl" class="card section-gap">
     <div class="page-header">
@@ -302,22 +308,35 @@ onMounted(async () => {
         <button v-if="canRequest && selected.active" type="button" class="button button-primary" @click="openVoucherForm">
           Solicitar vale
         </button>
-        <template v-if="canManage && !confirmingClose">
-          <button type="button" class="button" :disabled="busy" @click="confirmingClose = true">Cerrar mes</button>
-        </template>
-        <template v-else-if="canManage">
-          <span class="hint">El mes {{ monthLabel(selected.openPeriod) }} se cierra y su saldo pasa al mes siguiente. No se puede deshacer.</span>
-          <button
-            type="button"
-            class="button button-primary"
-            :disabled="busy"
-            @click="confirmingClose = false; run(() => closePeriod(selected!.openPeriod!.id))"
-          >
-            Sí, cerrar mes
-          </button>
-          <button type="button" class="button" @click="confirmingClose = false">No</button>
-        </template>
+        <button v-if="canManage" type="button" class="button" :disabled="busy" @click="confirmingClose = true">
+          Cerrar mes
+        </button>
       </div>
+
+      <AppModal
+        :open="confirmingClose"
+        :title="`Cerrar mes ${monthLabel(selected.openPeriod)}`"
+        @close="confirmingClose = false"
+      >
+        <div class="form-grid">
+          <p class="hint">
+            El mes <strong>{{ monthLabel(selected.openPeriod) }}</strong> se cerrará con un saldo final de
+            <strong>{{ formatUsd(selected.openPeriod.cashCents) }}</strong>, que pasará al mes siguiente. Esta acción no se
+            puede deshacer.
+          </p>
+          <div class="actions">
+            <button type="button" class="button" @click="confirmingClose = false">Cancelar</button>
+            <button
+              type="button"
+              class="button button-primary"
+              :disabled="busy"
+              @click="confirmingClose = false; run(() => closePeriod(selected!.openPeriod!.id))"
+            >
+              Sí, cerrar mes
+            </button>
+          </div>
+        </div>
+      </AppModal>
     </template>
     <template v-else>
       <p class="hint">La caja no tiene un mes abierto.</p>
@@ -340,55 +359,64 @@ onMounted(async () => {
       </form>
     </template>
 
-    <form v-if="voucherFormOpen" class="form-grid section-gap" @submit.prevent="submitVoucher">
-      <h2>Solicitar vale</h2>
-      <label class="field">
-        Concepto
-        <input v-model="voucherForm.concept" required minlength="3" maxlength="200" />
-      </label>
-      <label class="field">
-        Beneficiario
-        <input v-model="voucherForm.beneficiary" required maxlength="120" />
-      </label>
-      <label class="field">
-        Monto (USD)
-        <input v-model="voucherForm.amount" inputmode="decimal" required placeholder="50.00" />
-      </label>
-      <div class="actions">
-        <button type="submit" class="button button-primary" :disabled="busy">Solicitar</button>
-        <button type="button" class="button" @click="voucherFormOpen = false">Cancelar</button>
-      </div>
-    </form>
+    <AppModal :open="voucherFormOpen" title="Solicitar vale" @close="voucherFormOpen = false">
+      <form class="form-grid" @submit.prevent="submitVoucher">
+        <label class="field">
+          Concepto
+          <input v-model="voucherForm.concept" required minlength="3" maxlength="200" />
+        </label>
+        <label class="field">
+          Beneficiario
+          <input v-model="voucherForm.beneficiary" required maxlength="120" />
+        </label>
+        <label class="field">
+          Monto (USD)
+          <input v-model="voucherForm.amount" inputmode="decimal" required placeholder="50.00" />
+        </label>
+        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
+        <div class="actions">
+          <button type="button" class="button" @click="voucherFormOpen = false">Cancelar</button>
+          <button type="submit" class="button button-primary" :disabled="busy">Solicitar</button>
+        </div>
+      </form>
+    </AppModal>
 
-    <form v-if="voucherAction" class="form-grid section-gap" @submit.prevent="submitVoucherAction">
-      <h2>
-        {{ voucherAction.type === 'reject' ? 'Rechazar' : 'Rendir' }} vale #{{ voucherAction.voucher.id }} ·
-        {{ voucherAction.voucher.concept }}
-      </h2>
-      <label v-if="voucherAction.type === 'reject'" class="field">
-        Motivo
-        <input v-model="actionForm.reason" required minlength="5" maxlength="500" />
-      </label>
-      <template v-else>
-        <label class="field">
-          Gastado (USD)
-          <input v-model="actionForm.spent" inputmode="decimal" required />
-          <span class="hint">Desembolsado: {{ formatUsd(voucherAction.voucher.amountCents) }}. Lo no gastado vuelve a la caja.</span>
+    <AppModal
+      :open="Boolean(voucherAction)"
+      :title="
+        voucherAction
+          ? `${voucherAction.type === 'reject' ? 'Rechazar' : 'Rendir'} vale #${voucherAction.voucher.id} · ${voucherAction.voucher.concept}`
+          : ''
+      "
+      @close="voucherAction = null"
+    >
+      <form v-if="voucherAction" class="form-grid" @submit.prevent="submitVoucherAction">
+        <label v-if="voucherAction.type === 'reject'" class="field">
+          Motivo
+          <input v-model="actionForm.reason" required minlength="5" maxlength="500" />
         </label>
-        <label class="field">
-          Número de comprobante
-          <input v-model="actionForm.receiptReference" required maxlength="120" />
-        </label>
-        <label class="field">
-          Fecha del comprobante
-          <input v-model="actionForm.receiptDate" type="date" required :max="today" />
-        </label>
-      </template>
-      <div class="actions">
-        <button type="submit" class="button button-primary" :disabled="busy">Confirmar</button>
-        <button type="button" class="button" @click="voucherAction = null">Cancelar</button>
-      </div>
-    </form>
+        <template v-else>
+          <label class="field">
+            Gastado (USD)
+            <input v-model="actionForm.spent" inputmode="decimal" required />
+            <span class="hint">Desembolsado: {{ formatUsd(voucherAction.voucher.amountCents) }}. Lo no gastado vuelve a la caja.</span>
+          </label>
+          <label class="field">
+            Número de comprobante
+            <input v-model="actionForm.receiptReference" required maxlength="120" />
+          </label>
+          <label class="field">
+            Fecha del comprobante
+            <input v-model="actionForm.receiptDate" type="date" required :max="today" />
+          </label>
+        </template>
+        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
+        <div class="actions">
+          <button type="button" class="button" @click="voucherAction = null">Cancelar</button>
+          <button type="submit" class="button button-primary" :disabled="busy">Confirmar</button>
+        </div>
+      </form>
+    </AppModal>
 
     <p v-if="detailError" class="error section-gap" role="alert">{{ detailError }}</p>
 

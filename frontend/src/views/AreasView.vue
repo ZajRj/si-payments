@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { createArea, listAreas, updateArea, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
@@ -73,22 +74,27 @@ onMounted(load);
     <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">Nueva área</button>
   </div>
 
-  <form v-if="formOpen" class="card form-grid" @submit.prevent="save">
-    <h2>{{ editingId === null ? 'Nueva área' : 'Editar área' }}</h2>
-    <label class="field">
-      Nombre
-      <input v-model="form.name" required maxlength="80" />
-    </label>
-    <label v-if="editingId !== null" class="checkbox">
-      <input v-model="form.active" type="checkbox" />
-      Área activa
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
+  <AppModal
+    :open="formOpen"
+    :title="editingId === null ? 'Nueva área' : 'Editar área'"
+    @close="formOpen = false"
+  >
+    <form class="form-grid" @submit.prevent="save">
+      <label class="field">
+        Nombre
+        <input v-model="form.name" required maxlength="80" />
+      </label>
+      <label v-if="editingId !== null" class="checkbox">
+        <input v-model="form.active" type="checkbox" />
+        Área activa
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>

@@ -21,6 +21,7 @@ import {
 } from '@/api/payment-requests';
 import { listProjects, type Project } from '@/api/projects';
 import { paymentRequestPdfUrl, receiptPdfUrl } from '@/api/reports';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import { REQUEST_STATUS_TONES } from '@/lib/status';
@@ -179,17 +180,14 @@ type Prompt =
   | { kind: 'annul'; payment: Payment; text: string };
 const prompt = ref<Prompt | null>(null);
 
-// El formulario de motivo y los errores de la solicitud están arriba del detalle; al accionar desde un
-// botón de más abajo (anular recibo, registrar entrega) quedarían fuera de vista.
-const promptForm = ref<HTMLElement | null>(null);
+// Aprobada y sin saldo por entregar: solo falta cerrarla.
+const readyToClose = computed(() => detail.value?.status === 'APPROVED' && detail.value.outstandingCents === 0);
+
+// Los errores de la solicitud están arriba del detalle; al accionar desde un botón de más abajo
+// (como registrar entrega) quedarían fuera de vista.
 const detailErrorEl = ref<HTMLElement | null>(null);
-watch(prompt, async (value) => {
-  if (!value) return;
-  await nextTick();
-  promptForm.value?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-});
 watch(detailError, async (value) => {
-  if (!value) return;
+  if (!value || prompt.value) return;
   await nextTick();
   detailErrorEl.value?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 });
@@ -247,28 +245,29 @@ onMounted(load);
     primero a la deuda más antigua.
   </p>
 
-  <form v-if="formOpen" class="card form-grid section-gap" @submit.prevent="save">
-    <h2>Nueva solicitud</h2>
-    <label class="field">
-      Proyecto
-      <select v-model.number="form.projectId" required>
-        <option :value="0" disabled>Selecciona un proyecto</option>
-        <option v-for="project in projects" :key="project.id" :value="project.id">
-          {{ project.code }} · {{ project.name }}
-        </option>
-      </select>
-      <span class="hint">Incluye toda la deuda causada y pendiente del proyecto que no esté en otra solicitud.</span>
-    </label>
-    <label class="field">
-      Notas (opcional)
-      <input v-model="form.notes" maxlength="500" />
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Crear</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
+  <AppModal :open="formOpen" title="Nueva solicitud" @close="formOpen = false">
+    <form class="form-grid" @submit.prevent="save">
+      <label class="field">
+        Proyecto
+        <select v-model.number="form.projectId" required>
+          <option :value="0" disabled>Selecciona un proyecto</option>
+          <option v-for="project in projects" :key="project.id" :value="project.id">
+            {{ project.code }} · {{ project.name }}
+          </option>
+        </select>
+        <span class="hint">Incluye toda la deuda causada y pendiente del proyecto que no esté en otra solicitud.</span>
+      </label>
+      <label class="field">
+        Notas (opcional)
+        <input v-model="form.notes" maxlength="500" />
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Crear</button>
+      </div>
+    </form>
+  </AppModal>
 
   <section v-if="detail" ref="detailEl" class="card section-gap">
     <div class="page-header">
@@ -334,23 +333,37 @@ onMounted(load);
       </button>
     </div>
 
-    <form v-if="prompt" ref="promptForm" class="form-grid section-gap" @submit.prevent="confirmPrompt">
-      <h2>
-        {{ PROMPT_TITLES[prompt.kind] }}
-        <template v-if="prompt.kind === 'annul'"> · recibo #{{ prompt.payment.id }}, {{ prompt.payment.person.name }}</template>
-      </h2>
-      <label class="field">
-        {{ promptRequiresText ? 'Motivo' : 'Nota (opcional)' }}
-        <input v-model="prompt.text" :required="promptRequiresText" :minlength="promptRequiresText ? 5 : undefined" maxlength="500" />
-        <span v-if="prompt.kind === 'close' && detail.outstandingCents > 0" class="hint">
-          El saldo pendiente vuelve a la deuda y podrá incluirse en otra solicitud.
-        </span>
-      </label>
-      <div class="actions">
-        <button type="submit" class="button button-primary" :disabled="busy">Confirmar</button>
-        <button type="button" class="button" @click="prompt = null">Cancelar</button>
-      </div>
-    </form>
+    <p v-if="readyToClose" class="notice notice-success section-gap" role="status">
+      <strong>Pagada por completo.</strong>
+      {{ canRegister ? 'Falta cerrar la solicitud para terminar el ciclo.' : 'Falta que el Receptor la cierre.' }}
+    </p>
+
+    <AppModal
+      :open="Boolean(prompt)"
+      :title="
+        prompt
+          ? prompt.kind === 'annul'
+            ? `${PROMPT_TITLES[prompt.kind]} · recibo #${prompt.payment.id} (${prompt.payment.person.name})`
+            : PROMPT_TITLES[prompt.kind]
+          : ''
+      "
+      @close="prompt = null"
+    >
+      <form v-if="prompt" class="form-grid" @submit.prevent="confirmPrompt">
+        <label class="field">
+          {{ promptRequiresText ? 'Motivo' : 'Nota (opcional)' }}
+          <input v-model="prompt.text" :required="promptRequiresText" :minlength="promptRequiresText ? 5 : undefined" maxlength="500" />
+          <span v-if="prompt.kind === 'close' && detail.outstandingCents > 0" class="hint">
+            El saldo pendiente vuelve a la deuda y podrá incluirse en otra solicitud.
+          </span>
+        </label>
+        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
+        <div class="actions">
+          <button type="button" class="button" @click="prompt = null">Cancelar</button>
+          <button type="submit" class="button button-primary" :disabled="busy">Confirmar</button>
+        </div>
+      </form>
+    </AppModal>
 
     <p v-if="detailError" ref="detailErrorEl" class="error section-gap" role="alert">{{ detailError }}</p>
 

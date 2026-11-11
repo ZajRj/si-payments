@@ -12,6 +12,7 @@ import { errorMessage } from '@/api/http';
 import { listPaymentGroups, type PaymentGroup } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import type { Tone } from '@/lib/status';
@@ -210,104 +211,111 @@ onMounted(load);
   </div>
   <p class="hint">Monto en USD que cobra una persona por cada período completo de su grupo de pago en un proyecto.</p>
 
-  <form v-if="formOpen" class="card form-grid section-gap" @submit.prevent="save">
-    <h2>Nueva asignación</h2>
-    <label class="field">
-      Persona
-      <select v-model.number="form.personId" required>
-        <option :value="0" disabled>Selecciona una persona</option>
-        <option v-for="person in activePeople" :key="person.id" :value="person.id">
-          {{ person.name }} ({{ person.idNumber }})
-        </option>
-      </select>
-    </label>
-    <label class="field">
-      Proyecto
-      <select v-model.number="form.projectId" required>
-        <option :value="0" disabled>Selecciona un proyecto</option>
-        <option v-for="project in activeProjects" :key="project.id" :value="project.id">
-          {{ project.code }} · {{ project.name }}
-        </option>
-      </select>
-      <span v-if="selectedProject" class="hint">
-        Vigencia: {{ formatRange(selectedProject.startDate, selectedProject.endDate) }}
-      </span>
-    </label>
-    <label class="field">
-      Grupo de pago
-      <select v-model.number="form.paymentGroupId" required>
-        <option :value="0" disabled>Selecciona un grupo</option>
-        <option v-for="group in activeGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
-      </select>
-    </label>
-    <label class="field">
-      Monto por período (USD)
-      <input v-model="form.amount" inputmode="decimal" required placeholder="150.00" />
-    </label>
-    <label class="field">
-      Desde
-      <input
-        v-model="form.startDate"
-        type="date"
-        required
-        :min="selectedProject?.startDate"
-        :max="selectedProject?.endDate"
-      />
-    </label>
-    <label class="field">
-      Hasta (opcional)
-      <input v-model="form.endDate" type="date" :min="form.startDate" :max="selectedProject?.endDate" />
-      <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
-
-  <form v-if="action" class="card form-grid section-gap" @submit.prevent="saveAction">
-    <h2>
-      {{ action.type === 'end' ? 'Cambiar fecha de fin' : 'Cambiar monto' }} ·
-      {{ action.assignment.person.name }}, {{ action.assignment.project.code }}
-    </h2>
-    <template v-if="action.type === 'end'">
+  <AppModal :open="formOpen" title="Nueva asignación" @close="formOpen = false">
+    <form class="form-grid" @submit.prevent="save">
       <label class="field">
-        Hasta
-        <input
-          v-model="actionForm.endDate"
-          type="date"
-          :min="action.assignment.startDate"
-          :max="action.assignment.project.endDate"
-        />
-        <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
-      </label>
-    </template>
-    <template v-else>
-      <label class="field">
-        Nuevo monto por período (USD)
-        <input v-model="actionForm.amount" inputmode="decimal" required />
+        Persona
+        <select v-model.number="form.personId" required>
+          <option :value="0" disabled>Selecciona una persona</option>
+          <option v-for="person in activePeople" :key="person.id" :value="person.id">
+            {{ person.name }} ({{ person.idNumber }})
+          </option>
+        </select>
       </label>
       <label class="field">
-        Aplica desde
+        Proyecto
+        <select v-model.number="form.projectId" required>
+          <option :value="0" disabled>Selecciona un proyecto</option>
+          <option v-for="project in activeProjects" :key="project.id" :value="project.id">
+            {{ project.code }} · {{ project.name }}
+          </option>
+        </select>
+        <span v-if="selectedProject" class="hint">
+          Vigencia: {{ formatRange(selectedProject.startDate, selectedProject.endDate) }}
+        </span>
+      </label>
+      <label class="field">
+        Grupo de pago
+        <select v-model.number="form.paymentGroupId" required>
+          <option :value="0" disabled>Selecciona un grupo</option>
+          <option v-for="group in activeGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
+        </select>
+      </label>
+      <label class="field">
+        Monto por período (USD)
+        <input v-model="form.amount" inputmode="decimal" required placeholder="150.00" />
+      </label>
+      <label class="field">
+        Desde
         <input
-          v-model="actionForm.effectiveDate"
+          v-model="form.startDate"
           type="date"
           required
-          :min="nextDay(action.assignment.startDate)"
-          :max="action.assignment.effectiveEndDate"
+          :min="selectedProject?.startDate"
+          :max="selectedProject?.endDate"
         />
       </label>
-      <p class="hint">
-        La asignación actual se cierra el día anterior y se crea una nueva con el nuevo monto, para conservar el historial.
-      </p>
-    </template>
-    <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="actionSaving">Guardar</button>
-      <button type="button" class="button" @click="action = null">Cancelar</button>
-    </div>
-  </form>
+      <label class="field">
+        Hasta (opcional)
+        <input v-model="form.endDate" type="date" :min="form.startDate" :max="selectedProject?.endDate" />
+        <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
+
+  <AppModal
+    :open="Boolean(action)"
+    :title="
+      action
+        ? `${action.type === 'end' ? 'Cambiar fecha de fin' : 'Cambiar monto'} · ${action.assignment.person.name} (${action.assignment.project.code})`
+        : ''
+    "
+    @close="action = null"
+  >
+    <form v-if="action" class="form-grid" @submit.prevent="saveAction">
+      <template v-if="action.type === 'end'">
+        <label class="field">
+          Hasta
+          <input
+            v-model="actionForm.endDate"
+            type="date"
+            :min="action.assignment.startDate"
+            :max="action.assignment.project.endDate"
+          />
+          <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
+        </label>
+      </template>
+      <template v-else>
+        <label class="field">
+          Nuevo monto por período (USD)
+          <input v-model="actionForm.amount" inputmode="decimal" required />
+        </label>
+        <label class="field">
+          Aplica desde
+          <input
+            v-model="actionForm.effectiveDate"
+            type="date"
+            required
+            :min="nextDay(action.assignment.startDate)"
+            :max="action.assignment.effectiveEndDate"
+          />
+        </label>
+        <p class="hint">
+          La asignación actual se cierra el día anterior y se crea una nueva con el nuevo monto, para conservar el historial.
+        </p>
+      </template>
+      <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="action = null">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="actionSaving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
 
   <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
