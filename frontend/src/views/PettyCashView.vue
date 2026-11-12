@@ -534,6 +534,7 @@ onMounted(async () => {
     </div>
   </section>
 
+  <template v-if="!selected">
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
   <div v-else class="table-wrapper">
@@ -568,4 +569,5 @@ onMounted(async () => {
       </tbody>
     </table>
   </div>
+  </template>
 </template>
