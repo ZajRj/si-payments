@@ -16,6 +16,7 @@ import { errorMessage } from '@/api/http';
 import { listPaymentGroups, listPeriods, type PaymentGroup, type Period } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
+import AppModal from '@/components/AppModal.vue';
 import PaginationBar from '@/components/PaginationBar.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
@@ -68,7 +69,7 @@ function filterArgs() {
   };
 }
 
-async function loadAccruals(page = accrualPaging.page) {
+async function loadAccruals(page = accrualPaging.page, seq = loadSeq) {
   const result = await listAccruals({
     ...filterArgs(),
     personId: filters.personId || undefined,
@@ -76,19 +77,21 @@ async function loadAccruals(page = accrualPaging.page) {
     status: filters.status || undefined,
     page,
   });
+  if (seq !== loadSeq) return;
   // Si anular dejó la página vacía, retrocede a la última que existe.
   if (result.accruals.length === 0 && result.pageCount > 0 && page > result.pageCount) {
-    return loadAccruals(result.pageCount);
+    return loadAccruals(result.pageCount, seq);
   }
   accruals.value = result.accruals;
   totals.value = result.totals;
   Object.assign(accrualPaging, { page: result.page, pageCount: result.pageCount, total: result.total });
 }
 
-async function loadBatches(page = batchPaging.page) {
+async function loadBatches(page = batchPaging.page, seq = loadSeq) {
   const result = await listBatches({ ...filterArgs(), page });
+  if (seq !== loadSeq) return;
   if (result.batches.length === 0 && result.pageCount > 0 && page > result.pageCount) {
-    return loadBatches(result.pageCount);
+    return loadBatches(result.pageCount, seq);
   }
   batches.value = result.batches;
   Object.assign(batchPaging, { page: result.page, pageCount: result.pageCount, total: result.total });
@@ -106,14 +109,15 @@ async function loadData(reset = false) {
       accrualPaging.page = 1;
       batchPaging.page = 1;
     }
-    await Promise.all([loadAccruals(), loadBatches()]);
-    if (seq !== loadSeq) return;
+    await Promise.all([loadAccruals(accrualPaging.page, seq), loadBatches(batchPaging.page, seq)]);
   } catch (e) {
     if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
     if (seq === loadSeq) loading.value = false;
   }
 }
+
+watch(filters, () => void loadData(true));
 
 async function changePage(table: 'accruals' | 'batches', page: number) {
   error.value = '';
@@ -228,62 +232,74 @@ onMounted(load);
     borran; los errores se corrigen anulando con un motivo.
   </p>
 
-  <form v-if="formOpen" class="card form-grid section-gap" @submit.prevent="generate">
-    <h2>Generar causación por lote</h2>
-    <label class="field">
-      Grupo de pago
-      <select v-model.number="form.paymentGroupId" required>
-        <option :value="0" disabled>Selecciona un grupo</option>
-        <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
-      </select>
-    </label>
-    <label class="field">
-      Período
-      <select v-model.number="form.periodId" required :disabled="!form.paymentGroupId">
-        <option :value="0" disabled>Selecciona un período</option>
-        <option v-for="period in closedPeriods" :key="period.id" :value="period.id">
-          {{ formatRange(period.startDate, period.endDate) }} ({{ period.days }} días)
-        </option>
-      </select>
-      <span class="hint">Solo aparecen los períodos que ya cerraron.</span>
-    </label>
-    <label class="field">
-      Proyecto
-      <select v-model.number="form.projectId">
-        <option :value="0">Todos (un lote por proyecto)</option>
-        <option v-for="project in projects" :key="project.id" :value="project.id">
-          {{ project.code }} · {{ project.name }}
-        </option>
-      </select>
-    </label>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <p v-if="formResult" class="hint" role="status">{{ formResult }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Generar</button>
-      <button type="button" class="button" @click="formOpen = false">Cerrar</button>
-    </div>
-  </form>
+  <AppModal :open="formOpen" title="Generar causación por lote" @close="formOpen = false">
+    <form class="form-grid" @submit.prevent="generate">
+      <label class="field">
+        Grupo de pago
+        <select v-model.number="form.paymentGroupId" required>
+          <option :value="0" disabled>Selecciona un grupo</option>
+          <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
+        </select>
+      </label>
+      <label class="field">
+        Período
+        <select v-model.number="form.periodId" required :disabled="!form.paymentGroupId">
+          <option :value="0" disabled>Selecciona un período</option>
+          <option v-for="period in closedPeriods" :key="period.id" :value="period.id">
+            {{ formatRange(period.startDate, period.endDate) }} ({{ period.days }} días)
+          </option>
+        </select>
+        <span class="hint">Solo aparecen los períodos que ya cerraron.</span>
+      </label>
+      <label class="field">
+        Proyecto
+        <select v-model.number="form.projectId">
+          <option :value="0">Todos (un lote por proyecto)</option>
+          <option v-for="project in projects" :key="project.id" :value="project.id">
+            {{ project.code }} · {{ project.name }}
+          </option>
+        </select>
+      </label>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <p v-if="formResult" class="hint" role="status">{{ formResult }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cerrar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Generar</button>
+      </div>
+    </form>
+  </AppModal>
 
-  <form v-if="annulTarget" class="card form-grid section-gap" @submit.prevent="saveAnnul">
-    <h2 v-if="annulTarget.type === 'accrual'">
-      Anular causación #{{ annulTarget.accrual.id }} · {{ annulTarget.accrual.person.name }},
-      {{ formatRange(annulTarget.accrual.period.startDate, annulTarget.accrual.period.endDate) }}
-    </h2>
-    <h2 v-else>
-      Anular lote #{{ annulTarget.batch.id }} · {{ annulTarget.batch.project.code }},
-      {{ formatRange(annulTarget.batch.period.startDate, annulTarget.batch.period.endDate) }}
-    </h2>
-    <label class="field">
-      Motivo
-      <input v-model="annulReason" required minlength="5" maxlength="500" />
-    </label>
-    <p class="hint">Después de anular se puede volver a generar la causación del período.</p>
-    <p v-if="annulError" class="error" role="alert">{{ annulError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="annulSaving">Anular</button>
-      <button type="button" class="button" @click="annulTarget = null">Cancelar</button>
-    </div>
-  </form>
+  <AppModal
+    :open="Boolean(annulTarget)"
+    :title="
+      annulTarget
+        ? annulTarget.type === 'accrual'
+          ? `Anular causación #${annulTarget.accrual.id} · ${annulTarget.accrual.person.name}`
+          : `Anular lote #${annulTarget.batch.id} · ${annulTarget.batch.project.code}`
+        : ''
+    "
+    @close="annulTarget = null"
+  >
+    <form v-if="annulTarget" class="form-grid" @submit.prevent="saveAnnul">
+      <p class="hint">
+        Período:
+        {{
+          annulTarget.type === 'accrual'
+            ? formatRange(annulTarget.accrual.period.startDate, annulTarget.accrual.period.endDate)
+            : formatRange(annulTarget.batch.period.startDate, annulTarget.batch.period.endDate)
+        }}. Después de anular se puede volver a generar la causación del período.
+      </p>
+      <label class="field">
+        Motivo
+        <input v-model="annulReason" required minlength="5" maxlength="500" />
+      </label>
+      <p v-if="annulError" class="error" role="alert">{{ annulError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="annulTarget = null">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="annulSaving">Anular</button>
+      </div>
+    </form>
+  </AppModal>
 
   <form class="card form-grid section-gap" @submit.prevent="loadData(true)">
     <label class="field">

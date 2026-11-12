@@ -17,6 +17,10 @@ model User {
   active       Boolean    @default(true)
   roleId       Int
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  deleteDate   DateTime?  @map("delete_date")
+  deletedById  Int?       @map("deleted_by_id")
+  deletedBy    User?      @relation("UserDeletedBy", fields: [deletedById], references: [id], onDelete: Restrict)
+  deletedUsers User[]     @relation("UserDeletedBy")
   auditEntries AuditLog[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -36,6 +40,7 @@ model User {
   settledVouchers       PettyCashVoucher[] @relation("VoucherSettledBy")
 
   @@index([roleId])
+  @@index([deletedById])
 }
 
 model Role {

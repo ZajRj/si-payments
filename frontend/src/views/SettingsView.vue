@@ -45,10 +45,13 @@ onMounted(load);
 </script>
 
 <template>
-  <h1>Parámetros</h1>
+  <div class="page-header">
+    <h1>Parámetros</h1>
+  </div>
+  <p class="hint">Datos institucionales y textos de conformidad que se imprimen en los reportes y recibos en PDF.</p>
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
-  <template v-else>
+  <div v-else class="settings-grid section-gap">
     <form v-for="setting in settings" :key="setting.key" class="card form-grid settings-form" @submit.prevent="save(setting)">
       <label class="field">
         {{ setting.label }}
@@ -67,5 +70,5 @@ onMounted(load);
         <span v-if="savedKey === setting.key" class="hint" role="status">Guardado</span>
       </div>
     </form>
-  </template>
+  </div>
 </template>

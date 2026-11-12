@@ -36,7 +36,7 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   const user = await prisma.user.findUnique({ where: { email }, include: authUserInclude });
   const passwordMatches = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
 
-  if (!user || !user.active || !passwordMatches) {
+  if (!user || !user.active || user.deleteDate || !passwordMatches) {
     throw new HttpError(401, 'INVALID_CREDENTIALS', 'Credenciales inválidas');
   }
 
@@ -46,7 +46,7 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 // Se consulta en cada petición para que los cambios de rol o la desactivación apliquen de inmediato.
 export async function findActiveAuthUser(id: number): Promise<AuthUser | null> {
   const user = await prisma.user.findUnique({ where: { id }, include: authUserInclude });
-  return user?.active ? toAuthUser(user) : null;
+  return user?.active && !user.deleteDate ? toAuthUser(user) : null;
 }
 
 export function signSessionToken(userId: number): string {

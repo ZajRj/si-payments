@@ -1,8 +1,10 @@
 import { http } from './http';
 
+export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
+
 export type AuditEntry = {
   id: number;
-  action: 'CREATE' | 'UPDATE' | 'DELETE';
+  action: AuditAction;
   entity: string;
   entityId: string;
   before: Record<string, unknown> | null;
@@ -12,7 +14,10 @@ export type AuditEntry = {
 };
 
 export type AuditFilters = {
+  action?: AuditAction;
   entity?: string;
+  entityId?: string;
+  userId?: number;
   from?: string;
   to?: string;
   page?: number;
@@ -23,12 +28,13 @@ export type AuditPage = {
   total: number;
   page: number;
   pageSize: number;
+  pageCount: number;
 };
 
 export function listAuditEntries(filters: AuditFilters) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== '') params.set(key, String(value));
+    if (value !== undefined && value !== '' && value !== 0) params.set(key, String(value));
   }
   return http<AuditPage>(`/audit-log?${params}`);
 }

@@ -10,6 +10,7 @@ import { requirePermission } from '../../middleware/authorize.js';
 import { PERMISSIONS } from '../../rbac/permissions.js';
 
 const querySchema = paginationQuerySchema().extend({
+  action: z.enum(['CREATE', 'UPDATE', 'DELETE']).optional(),
   entity: z.string().trim().min(1).max(60).optional(),
   entityId: z.string().trim().min(1).max(60).optional(),
   userId: z.coerce.number().int().positive().optional(),
@@ -20,12 +21,13 @@ const querySchema = paginationQuerySchema().extend({
 export const auditRouter = Router();
 
 auditRouter.get('/', authenticate, requirePermission(PERMISSIONS.AUDIT_READ), async (req, res) => {
-  const { entity, entityId, userId, from, to, ...pagination } = querySchema.parse(req.query);
+  const { action, entity, entityId, userId, from, to, ...pagination } = querySchema.parse(req.query);
   if (from && to && from.getTime() > to.getTime()) {
     throw new HttpError(400, 'INVALID_RANGE', 'La fecha "desde" no puede ser posterior a la fecha "hasta"');
   }
 
   const where: Prisma.AuditLogWhereInput = {
+    action,
     entity,
     entityId,
     userId,

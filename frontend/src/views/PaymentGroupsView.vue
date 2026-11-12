@@ -15,6 +15,7 @@ import {
   type PaymentGroup,
   type Period,
 } from '@/api/payment-groups';
+import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
@@ -171,47 +172,52 @@ onMounted(load);
     </button>
   </div>
 
-  <form v-if="formOpen" class="card form-grid" @submit.prevent="save">
-    <h2>{{ editingId === null ? 'Nuevo grupo de pago' : 'Editar grupo de pago' }}</h2>
-    <label class="field">
-      Nombre
-      <input v-model="form.name" required maxlength="80" />
-    </label>
-    <label class="field">
-      Periodicidad
-      <select v-model="form.frequency" @change="onFrequencyChange">
-        <option v-for="(label, value) in FREQUENCY_LABELS" :key="value" :value="value">{{ label }}</option>
-      </select>
-    </label>
-    <label v-if="form.frequency === 'WEEKLY'" class="field">
-      Día de cierre
-      <select v-model="form.cutoff">
-        <option v-for="(day, index) in WEEKDAYS" :key="index" :value="String(index)">{{ day }}</option>
-      </select>
-    </label>
-    <label v-else-if="form.frequency === 'BIWEEKLY'" class="field">
-      Cierre de la primera quincena (día)
-      <input v-model="form.cutoff" type="number" min="1" max="27" required />
-      <span class="hint">La segunda quincena cierra a fin de mes.</span>
-    </label>
-    <label v-else class="field">
-      Día de cierre
-      <input v-model="form.cutoff" type="number" min="1" max="28" placeholder="Fin de mes" />
-      <span class="hint">Déjalo vacío para cerrar el último día de cada mes.</span>
-    </label>
-    <label v-if="editingId !== null" class="checkbox">
-      <input v-model="form.active" type="checkbox" />
-      Grupo activo
-    </label>
-    <p v-if="editingId !== null" class="hint">
-      Un cambio de periodicidad o de corte solo afecta a los períodos que se generen después.
-    </p>
-    <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-    <div class="actions">
-      <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
-      <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-    </div>
-  </form>
+  <AppModal
+    :open="formOpen"
+    :title="editingId === null ? 'Nuevo grupo de pago' : 'Editar grupo de pago'"
+    @close="formOpen = false"
+  >
+    <form class="form-grid" @submit.prevent="save">
+      <label class="field">
+        Nombre
+        <input v-model="form.name" required maxlength="80" />
+      </label>
+      <label class="field">
+        Periodicidad
+        <select v-model="form.frequency" @change="onFrequencyChange">
+          <option v-for="(label, value) in FREQUENCY_LABELS" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </label>
+      <label v-if="form.frequency === 'WEEKLY'" class="field">
+        Día de cierre
+        <select v-model="form.cutoff">
+          <option v-for="(day, index) in WEEKDAYS" :key="index" :value="String(index)">{{ day }}</option>
+        </select>
+      </label>
+      <label v-else-if="form.frequency === 'BIWEEKLY'" class="field">
+        Cierre de la primera quincena (día)
+        <input v-model="form.cutoff" type="number" min="1" max="27" required />
+        <span class="hint">La segunda quincena cierra a fin de mes.</span>
+      </label>
+      <label v-else class="field">
+        Día de cierre
+        <input v-model="form.cutoff" type="number" min="1" max="28" placeholder="Fin de mes" />
+        <span class="hint">Déjalo vacío para cerrar el último día de cada mes.</span>
+      </label>
+      <label v-if="editingId !== null" class="checkbox">
+        <input v-model="form.active" type="checkbox" />
+        Grupo activo
+      </label>
+      <p v-if="editingId !== null" class="hint">
+        Un cambio de periodicidad o de corte solo afecta a los períodos que se generen después.
+      </p>
+      <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
+        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      </div>
+    </form>
+  </AppModal>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
@@ -263,18 +269,37 @@ onMounted(load);
       </label>
       <div class="actions">
         <button type="submit" class="button button-primary" :disabled="generating">Generar períodos</button>
-        <template v-if="periods.length > 0 && !confirmingRemove">
-          <button type="button" class="button" :disabled="generating" @click="confirmingRemove = true">Eliminar último período</button>
-        </template>
-        <template v-else-if="periods.length > 0">
-          <span class="hint">
-            ¿Eliminar el período {{ formatRange(periods[periods.length - 1]!.startDate, periods[periods.length - 1]!.endDate) }}?
-          </span>
-          <button type="button" class="button button-primary" :disabled="generating" @click="removeLast">Sí, eliminar</button>
-          <button type="button" class="button" @click="confirmingRemove = false">No</button>
-        </template>
+        <button
+          v-if="periods.length > 0"
+          type="button"
+          class="button"
+          :disabled="generating"
+          @click="confirmingRemove = true"
+        >
+          Eliminar último período
+        </button>
       </div>
     </form>
+
+    <AppModal
+      :open="confirmingRemove && periods.length > 0"
+      title="Eliminar último período"
+      @close="confirmingRemove = false"
+    >
+      <div v-if="periods.length > 0" class="form-grid">
+        <p class="hint">
+          ¿Eliminar el período
+          <strong>{{ formatRange(periods[periods.length - 1]!.startDate, periods[periods.length - 1]!.endDate) }}</strong>
+          del grupo «{{ selected.name }}»?
+        </p>
+        <div class="actions">
+          <button type="button" class="button" @click="confirmingRemove = false">Cancelar</button>
+          <button type="button" class="button button-primary" :disabled="generating" @click="removeLast">
+            Sí, eliminar
+          </button>
+        </div>
+      </div>
+    </AppModal>
 
     <p v-if="periodsError" class="error" role="alert">{{ periodsError }}</p>
     <p v-else-if="periodsLoading">Cargando…</p>
