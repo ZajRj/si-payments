@@ -27,11 +27,19 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    container_name: facyt_payments_app
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-8080}:8080"
+      - "${FRONTEND_PORT:-8080}:8083"
+    networks:
+      - external_bridge_network
 
 volumes:
   backend-data:
+
+networks:
+  external_bridge_network:
+    external: true
+    name: portainer_network
