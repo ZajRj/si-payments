@@ -13,6 +13,7 @@ import { listPaymentGroups, type PaymentGroup } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
 import AppModal from '@/components/AppModal.vue';
+import PaymentGroupsPanel from '@/components/PaymentGroupsPanel.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import type { Tone } from '@/lib/status';
@@ -29,6 +30,7 @@ const people = ref<Person[]>([]);
 const projects = ref<Project[]>([]);
 const groups = ref<PaymentGroup[]>([]);
 const loading = ref(true);
+const showGroups = ref(false);
 const error = ref('');
 
 const initialProject = Number(route.query.projectId);
@@ -87,6 +89,14 @@ async function loadAssignments() {
     if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
     if (seq === loadSeq) loading.value = false;
+  }
+}
+
+async function reloadGroups() {
+  try {
+    groups.value = await listPaymentGroups();
+  } catch (e) {
+    error.value = errorMessage(e);
   }
 }
 
@@ -205,11 +215,20 @@ onMounted(load);
 <template>
   <div class="page-header">
     <h1>Asignaciones</h1>
-    <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">
-      Nueva asignación
-    </button>
+    <div class="actions">
+      <button type="button" class="button" @click="showGroups = !showGroups">
+        {{ showGroups ? 'Ocultar grupos de pago' : 'Grupos de pago' }}
+      </button>
+      <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">
+        Nueva asignación
+      </button>
+    </div>
   </div>
   <p class="hint">Monto en USD que cobra una persona por cada período completo de su grupo de pago en un proyecto.</p>
+
+  <section v-if="showGroups" class="card section-gap">
+    <PaymentGroupsPanel @changed="reloadGroups" />
+  </section>
 
   <AppModal :open="formOpen" title="Nueva asignación" @close="formOpen = false">
     <form class="form-grid" @submit.prevent="save">
@@ -332,8 +351,9 @@ onMounted(load);
         <option v-for="person in people" :key="person.id" :value="person.id">{{ person.name }}</option>
       </select>
     </label>
-    <label class="checkbox">
-      <input v-model="filters.openOnly" type="checkbox" />
+    <label class="switch">
+      <input v-model="filters.openOnly" type="checkbox" role="switch" />
+      <span class="switch-slider"></span>
       Solo vigentes o futuras
     </label>
   </form>

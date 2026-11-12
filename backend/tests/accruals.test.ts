@@ -54,9 +54,9 @@ beforeAll(async () => {
   physicsId = areas.find((area: { name: string }) => area.name === 'Física').id;
 
   // Grupo propio de estas pruebas, para que la causación sin proyecto solo vea asignaciones de aquí.
-  const group = await admin.post('/api/payment-groups').send({ name: 'Quincenal causación', frequency: 'BIWEEKLY' }).expect(201);
+  const group = await generator.post('/api/payment-groups').send({ name: 'Quincenal causación', frequency: 'BIWEEKLY' }).expect(201);
   groupId = group.body.paymentGroup.id;
-  periods = (await admin.post(`/api/payment-groups/${groupId}/periods`).send({ from: '2026-01-01', until: '2026-03-31' }).expect(201))
+  periods = (await generator.post(`/api/payment-groups/${groupId}/periods`).send({ from: '2026-01-01', until: '2026-03-31' }).expect(201))
     .body.periods;
 
   projectId = await createProject('TST-CAU-001');
@@ -143,11 +143,11 @@ describe('generación por lote', () => {
   });
 
   it('no causa un período que todavía no termina', async () => {
-    const monthly = await admin.post('/api/payment-groups').send({ name: 'Mensual futuro', frequency: 'MONTHLY' }).expect(201);
+    const monthly = await generator.post('/api/payment-groups').send({ name: 'Mensual futuro', frequency: 'MONTHLY' }).expect(201);
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Caracas' });
     const until = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const created = (
-      await admin.post(`/api/payment-groups/${monthly.body.paymentGroup.id}/periods`).send({ from: today, until }).expect(201)
+      await generator.post(`/api/payment-groups/${monthly.body.paymentGroup.id}/periods`).send({ from: today, until }).expect(201)
     ).body.periods;
 
     const res = await generator.post('/api/accruals/generate').send({ periodId: created[1].id }).expect(409);
@@ -236,7 +236,7 @@ describe('protección de lo causado', () => {
 
   it('no permite eliminar un período con causaciones', async () => {
     await generator.post('/api/accruals/generate').send({ periodId: period('2026-03-16').id, projectId }).expect(201);
-    const res = await admin.delete(`/api/payment-groups/${groupId}/periods/last`).expect(409);
+    const res = await generator.delete(`/api/payment-groups/${groupId}/periods/last`).expect(409);
     expect(res.body.error.code).toBe('PERIOD_HAS_ACCRUALS');
   });
 });
