@@ -47,21 +47,22 @@ describe('áreas', () => {
 describe('reglas de desactivación de catálogos', () => {
   it('no desactiva un área con proyectos activos ni un grupo con asignaciones vigentes', async () => {
     const admin = await loginAs('admin@example.com');
+    const generator = await loginAs('generador@example.com');
     const areas = (await admin.get('/api/areas').expect(200)).body.areas;
     const physics = areas.find((area: { name: string }) => area.name === 'Física');
     await admin.patch(`/api/areas/${physics.id}`).send({ active: false }).expect(409);
 
-    const groups = (await admin.get('/api/payment-groups').expect(200)).body.paymentGroups;
+    const groups = (await generator.get('/api/payment-groups').expect(200)).body.paymentGroups;
     const monthly = groups.find((group: { name: string }) => group.name === 'Mensual');
-    await admin.patch(`/api/payment-groups/${monthly.id}`).send({ active: false }).expect(409);
-    await admin.post('/api/payment-groups').send({ name: 'mensual', frequency: 'MONTHLY' }).expect(409);
+    await generator.patch(`/api/payment-groups/${monthly.id}`).send({ active: false }).expect(409);
+    await generator.post('/api/payment-groups').send({ name: 'mensual', frequency: 'MONTHLY' }).expect(409);
   });
 });
 
 describe('mensajes de validación', () => {
   it('se devuelven en español', async () => {
-    const admin = await loginAs('admin@example.com');
-    const res = await admin.post('/api/payment-groups').send({ name: ' ', frequency: 'MONTHLY', cutoffDay: 1.5 }).expect(400);
+    const generator = await loginAs('generador@example.com');
+    const res = await generator.post('/api/payment-groups').send({ name: ' ', frequency: 'MONTHLY', cutoffDay: 1.5 }).expect(400);
     expect(res.body.error.details).toEqual({
       name: ['Este campo es obligatorio'],
       cutoffDay: ['Debe ser un número entero'],
@@ -71,25 +72,25 @@ describe('mensajes de validación', () => {
 
 describe('grupos de pago y períodos', () => {
   it('valida el día de corte según la periodicidad', async () => {
-    const admin = await loginAs('admin@example.com');
+    const generator = await loginAs('generador@example.com');
 
-    await admin.post('/api/payment-groups').send({ name: 'Sin corte', frequency: 'WEEKLY' }).expect(400);
-    await admin.post('/api/payment-groups').send({ name: 'Corte 30', frequency: 'MONTHLY', cutoffDay: 30 }).expect(400);
-    await admin.post('/api/payment-groups').send({ name: 'Diario', frequency: 'DAILY' }).expect(400);
+    await generator.post('/api/payment-groups').send({ name: 'Sin corte', frequency: 'WEEKLY' }).expect(400);
+    await generator.post('/api/payment-groups').send({ name: 'Corte 30', frequency: 'MONTHLY', cutoffDay: 30 }).expect(400);
+    await generator.post('/api/payment-groups').send({ name: 'Diario', frequency: 'DAILY' }).expect(400);
   });
 
   it('genera períodos consecutivos y un cambio de corte solo afecta a los siguientes', async () => {
-    const admin = await loginAs('admin@example.com');
-    const created = await admin
+    const generator = await loginAs('generador@example.com');
+    const created = await generator
       .post('/api/payment-groups')
       .send({ name: 'Quincenal pruebas', frequency: 'BIWEEKLY' })
       .expect(201);
     const id = created.body.paymentGroup.id;
     expect(created.body.paymentGroup.cutoffDay).toBe(15);
 
-    await admin.post(`/api/payment-groups/${id}/periods`).send({ until: '2026-01-31' }).expect(400);
+    await generator.post(`/api/payment-groups/${id}/periods`).send({ until: '2026-01-31' }).expect(400);
 
-    const first = await admin
+    const first = await generator
       .post(`/api/payment-groups/${id}/periods`)
       .send({ from: '2026-01-01', until: '2026-01-31' })
       .expect(201);
@@ -98,56 +99,60 @@ describe('grupos de pago y períodos', () => {
       { startDate: '2026-01-16', endDate: '2026-01-31', days: 16 },
     ]);
 
-    await admin
+    await generator
       .post(`/api/payment-groups/${id}/periods`)
       .send({ from: '2026-02-01', until: '2026-02-28' })
       .expect(409);
 
-    await admin.patch(`/api/payment-groups/${id}`).send({ cutoffDay: 10 }).expect(200);
-    const next = await admin.post(`/api/payment-groups/${id}/periods`).send({ until: '2026-02-28' }).expect(201);
+    await generator.patch(`/api/payment-groups/${id}`).send({ cutoffDay: 10 }).expect(200);
+    const next = await generator.post(`/api/payment-groups/${id}/periods`).send({ until: '2026-02-28' }).expect(201);
     expect(next.body.periods).toMatchObject([
       { startDate: '2026-02-01', endDate: '2026-02-10' },
       { startDate: '2026-02-11', endDate: '2026-02-28' },
     ]);
 
-    const removed = await admin.delete(`/api/payment-groups/${id}/periods/last`).expect(200);
+    const removed = await generator.delete(`/api/payment-groups/${id}/periods/last`).expect(200);
     expect(removed.body.period).toMatchObject({ startDate: '2026-02-11', endDate: '2026-02-28' });
 
-    const list = await admin.get(`/api/payment-groups/${id}/periods`).expect(200);
+    const list = await generator.get(`/api/payment-groups/${id}/periods`).expect(200);
     expect(list.body.periods.map((period: { endDate: string }) => period.endDate)).toEqual([
       '2026-01-15',
       '2026-01-31',
       '2026-02-10',
     ]);
 
-    const [deletion] = await auditEntries(admin, 'Period', removed.body.period.id);
+    const [deletion] = await auditEntries(await loginAs('admin@example.com'), 'Period', removed.body.period.id);
     expect(deletion).toMatchObject({ action: 'DELETE', before: { startDate: '2026-02-11' }, after: null });
   });
 
   it('no genera períodos en un grupo inactivo', async () => {
-    const admin = await loginAs('admin@example.com');
-    const created = await admin
+    const generator = await loginAs('generador@example.com');
+    const created = await generator
       .post('/api/payment-groups')
       .send({ name: 'Mensual inactivo', frequency: 'MONTHLY' })
       .expect(201);
     const id = created.body.paymentGroup.id;
 
-    await admin.patch(`/api/payment-groups/${id}`).send({ active: false }).expect(200);
-    await admin
+    await generator.patch(`/api/payment-groups/${id}`).send({ active: false }).expect(200);
+    await generator
       .post(`/api/payment-groups/${id}/periods`)
       .send({ from: '2026-01-01', until: '2026-03-31' })
       .expect(409);
   });
 
-  it('el generador consulta grupos y períodos, pero no los modifica', async () => {
-    const generator = await loginAs('generador@example.com');
-    const res = await generator.get('/api/payment-groups').expect(200);
-    const group = res.body.paymentGroups.find((g: { name: string }) => g.name === 'Quincenal');
+  it('el administrador y el receptor consultan grupos y períodos, pero no los modifican', async () => {
+    for (const email of ['admin@example.com', 'receptor@example.com']) {
+      const agent = await loginAs(email);
+      const res = await agent.get('/api/payment-groups').expect(200);
+      const group = res.body.paymentGroups.find((g: { name: string }) => g.name === 'Quincenal');
 
-    expect(group.periodCount).toBe(24);
-    await generator.get(`/api/payment-groups/${group.id}/periods`).expect(200);
-    await generator.post(`/api/payment-groups/${group.id}/periods`).send({ until: '2027-01-31' }).expect(403);
-    await generator.delete(`/api/payment-groups/${group.id}/periods/last`).expect(403);
+      expect(group.periodCount).toBe(24);
+      await agent.get(`/api/payment-groups/${group.id}/periods`).expect(200);
+      await agent.post('/api/payment-groups').send({ name: 'No permitido', frequency: 'MONTHLY' }).expect(403);
+      await agent.patch(`/api/payment-groups/${group.id}`).send({ active: false }).expect(403);
+      await agent.post(`/api/payment-groups/${group.id}/periods`).send({ until: '2027-01-31' }).expect(403);
+      await agent.delete(`/api/payment-groups/${group.id}/periods/last`).expect(403);
+    }
   });
 });
 

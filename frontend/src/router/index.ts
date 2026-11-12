@@ -95,12 +95,6 @@ export const router = createRouter({
           meta: { navLabel: 'Áreas', navIcon: 'grid', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
         },
         {
-          path: 'grupos-de-pago',
-          name: 'payment-groups',
-          component: () => import('@/views/PaymentGroupsView.vue'),
-          meta: { navLabel: 'Grupos de pago', navIcon: 'calendar', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
-        },
-        {
           path: 'parametros',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
