@@ -23,6 +23,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    container_name: facyt_payments_back
     networks:
       - external_bridge_network
 
