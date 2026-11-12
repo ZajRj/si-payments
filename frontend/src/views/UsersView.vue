@@ -2,9 +2,10 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import { listRoles, type Role } from '@/api/roles';
-import { createUser, listUsers, updateUser, type User } from '@/api/users';
+import { createUser, deleteUser, listUsers, updateUser, type User } from '@/api/users';
 import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+import { formatDateTime } from '@/lib/dates';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
@@ -16,6 +17,7 @@ const users = ref<User[]>([]);
 const roles = ref<Role[]>([]);
 const loading = ref(true);
 const error = ref('');
+const showDeleted = ref(false);
 
 const formOpen = ref(false);
 const editingId = ref<number | null>(null);
@@ -23,7 +25,18 @@ const saving = ref(false);
 const formError = ref('');
 const form = reactive({ name: '', email: '', password: '', roleId: 0, active: true });
 
+const deleteModalOpen = ref(false);
+const deletingUser = ref<User | null>(null);
+const deleting = ref(false);
+const deleteError = ref('');
+
 const isSelf = computed(() => editingId.value === auth.user?.id);
+
+const deletedCount = computed(() => users.value.filter((u) => Boolean(u.deleteDate)).length);
+const visibleUsers = computed(() => {
+  if (showDeleted.value) return users.value;
+  return users.value.filter((u) => !u.deleteDate);
+});
 
 async function load() {
   loading.value = true;
@@ -59,6 +72,12 @@ function openEdit(user: User) {
   formOpen.value = true;
 }
 
+function openDelete(user: User) {
+  deletingUser.value = user;
+  deleteError.value = '';
+  deleteModalOpen.value = true;
+}
+
 async function save() {
   saving.value = true;
   formError.value = '';
@@ -79,15 +98,37 @@ async function save() {
   }
 }
 
+async function confirmDelete() {
+  if (!deletingUser.value) return;
+  deleting.value = true;
+  deleteError.value = '';
+  try {
+    await deleteUser(deletingUser.value.id);
+    deleteModalOpen.value = false;
+    deletingUser.value = null;
+    await load();
+  } catch (e) {
+    deleteError.value = errorMessage(e);
+  } finally {
+    deleting.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
 <template>
   <div class="page-header">
     <h1>Usuarios</h1>
-    <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">
-      Nuevo usuario
-    </button>
+    <div class="actions">
+      <label v-if="deletedCount > 0" class="checkbox">
+        <input v-model="showDeleted" type="checkbox" />
+        Mostrar eliminados ({{ deletedCount }})
+      </label>
+      <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">
+        Nuevo usuario
+      </button>
+    </div>
   </div>
 
   <AppModal
@@ -133,8 +174,32 @@ onMounted(load);
     </form>
   </AppModal>
 
+  <AppModal
+    :open="deleteModalOpen"
+    title="Eliminar usuario"
+    @close="deleteModalOpen = false"
+  >
+    <form class="form-grid" @submit.prevent="confirmDelete">
+      <p class="hint">
+        ¿Estás seguro de que deseas eliminar al usuario
+        <strong>{{ deletingUser?.name }}</strong> ({{ deletingUser?.email }})?
+      </p>
+      <p class="hint">
+        Esta acción realizará un <strong>borrado lógico (soft delete)</strong>: se registrará la fecha de eliminación y tu usuario como operador responsable. El usuario ya no podrá iniciar sesión.
+      </p>
+      <p v-if="deleteError" class="error" role="alert">{{ deleteError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="deleteModalOpen = false">Cancelar</button>
+        <button type="submit" class="button button-danger" :disabled="deleting">
+          {{ deleting ? 'Eliminando…' : 'Sí, eliminar' }}
+        </button>
+      </div>
+    </form>
+  </AppModal>
+
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
+  <p v-else-if="visibleUsers.length === 0" class="hint">No hay usuarios para mostrar.</p>
   <div v-else class="table-wrapper">
     <table>
       <thead>
@@ -147,13 +212,39 @@ onMounted(load);
         </tr>
       </thead>
       <tbody>
-        <tr v-for="user in users" :key="user.id">
+        <tr v-for="user in visibleUsers" :key="user.id">
           <td>{{ user.name }}</td>
           <td>{{ user.email }}</td>
           <td>{{ user.role.name }}</td>
-          <td><StatusBadge :label="user.active ? 'Activo' : 'Inactivo'" :tone="activeTone(user.active)" /></td>
+          <td>
+            <template v-if="user.deleteDate">
+              <StatusBadge label="Eliminado" tone="danger" />
+              <div v-if="user.deletedBy" class="hint text-xs">
+                Por {{ user.deletedBy.name }}
+              </div>
+              <div v-if="user.deleteDate" class="hint text-xs">
+                {{ formatDateTime(user.deleteDate) }}
+              </div>
+            </template>
+            <template v-else>
+              <StatusBadge :label="user.active ? 'Activo' : 'Inactivo'" :tone="activeTone(user.active)" />
+            </template>
+          </td>
           <td v-if="canManage">
-            <button type="button" class="button" @click="openEdit(user)">Editar</button>
+            <div v-if="user.deleteDate" class="hint text-xs">
+              Eliminado
+            </div>
+            <div v-else class="actions">
+              <button type="button" class="button" @click="openEdit(user)">Editar</button>
+              <button
+                v-if="user.id !== auth.user?.id"
+                type="button"
+                class="button button-danger"
+                @click="openDelete(user)"
+              >
+                Eliminar
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>

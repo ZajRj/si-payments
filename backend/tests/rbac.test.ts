@@ -125,6 +125,63 @@ describe('gestión de usuarios', () => {
     await admin.post('/api/users').send({ ...valid, email: 'admin@example.com' }).expect(409);
     await admin.post('/api/users').send({ ...valid, roleId: 9999 }).expect(400);
   });
+
+  it('elimina un usuario via soft delete registrando fecha y operador responsable', async () => {
+    const admin = await loginAs('admin@example.com');
+    const { body: me } = await admin.get('/api/auth/me').expect(200);
+
+    const created = await admin
+      .post('/api/users')
+      .send({
+        email: 'paraeliminar@example.com',
+        name: 'Para Eliminar',
+        password: 'Password1234!',
+        roleId: await roleId(ROLE_CODES.PAYROLL_RECEIVER),
+      })
+      .expect(201);
+
+    const targetId = created.body.user.id;
+    const session = await loginAs('paraeliminar@example.com', 'Password1234!');
+    await session.get('/api/auth/me').expect(200);
+
+    // No se puede autoeliminar el administrador
+    await admin.delete(`/api/users/${me.user.id}`).expect(409);
+
+    // Usuario sin permiso USERS_MANAGE no puede eliminar
+    const receiver = await loginAs('receptor@example.com');
+    await receiver.delete(`/api/users/${targetId}`).expect(403);
+
+    // El admin ejecuta soft delete
+    const deleteRes = await admin.delete(`/api/users/${targetId}`).expect(200);
+    expect(deleteRes.body.user.deleteDate).not.toBeNull();
+    expect(deleteRes.body.user.delete_date).not.toBeNull();
+    expect(deleteRes.body.user.deletedById).toBe(me.user.id);
+    expect(deleteRes.body.user.deletedBy?.id).toBe(me.user.id);
+    expect(deleteRes.body.user.active).toBe(false);
+
+    // La sesión abierta se invalida de inmediato y no puede volver a ingresar
+    await session.get('/api/auth/me').expect(401);
+    await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'paraeliminar@example.com', password: 'Password1234!' })
+      .expect(401);
+
+    // No se puede modificar ni volver a eliminar
+    await admin.patch(`/api/users/${targetId}`).send({ name: 'Otro Nombre' }).expect(400);
+    await admin.delete(`/api/users/${targetId}`).expect(400);
+
+    // Verifica que en la base de datos figure delete_date y deleted_by_id
+    const dbUser = await prisma.user.findUnique({ where: { id: targetId } });
+    expect(dbUser?.deleteDate).not.toBeNull();
+    expect(dbUser?.deletedById).toBe(me.user.id);
+
+    // Se registró en la auditoría
+    const auditEntry = await prisma.auditLog.findFirst({
+      where: { entity: 'User', entityId: String(targetId), action: 'DELETE' },
+    });
+    expect(auditEntry).not.toBeNull();
+    expect(auditEntry?.userId).toBe(me.user.id);
+  });
 });
 
 describe('segregación de funciones', () => {
