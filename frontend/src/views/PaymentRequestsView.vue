@@ -333,7 +333,7 @@ onMounted(load);
       </button>
     </div>
 
-    <p v-if="readyToClose" class="notice notice-success section-gap" role="status">
+    <p v-if="readyToClose" class="notice notice-success section-gap" role="status" style="margin-top: 1em">
       <strong>Pagada por completo.</strong>
       {{ canRegister ? 'Falta cerrar la solicitud para terminar el ciclo.' : 'Falta que el Receptor la cierre.' }}
     </p>
@@ -495,6 +495,7 @@ onMounted(load);
     </div>
   </section>
 
+<template v-if="!detail">
   <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
       Proyecto
@@ -555,4 +556,5 @@ onMounted(load);
       </tbody>
     </table>
   </div>
+</template>
 </template>
