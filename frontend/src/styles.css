@@ -2107,3 +2107,9 @@ td small {
   font-size: 0.9rem;
   text-align: center;
 }
+
+/* Mensaje de lista vacía, centrado dentro de su contenedor. */
+.empty-hint {
+  padding: 2rem 0;
+  text-align: center;
+}
