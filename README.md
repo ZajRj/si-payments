@@ -182,7 +182,7 @@ Al crear un módulo nuevo, todo servicio que escriba en la base de datos debe ha
 |---|---|
 | Parámetros | Datos de la empresa y textos para los documentos. Las claves válidas están en [settings.definitions.ts](backend/src/modules/settings/settings.definitions.ts). |
 | Áreas | Física, Química, Biología y las que agregue el administrador. No se borran, se desactivan. |
-| Grupos de pago | Periodicidad (semanal, quincenal, mensual) y día de corte personalizable. Se gestionan desde Asignaciones, a cargo del Generador de Nómina. Cada grupo genera sus períodos de pago. |
+| Grupos de pago | Periodicidad (semanal, quincenal, mensual) y día de corte personalizable. Se gestionan en Catálogos › Grupos de pago, a cargo del Generador de Nómina. Cada grupo genera sus períodos de pago. |
 
 ### Períodos y fechas de corte
 

@@ -22,8 +22,6 @@ import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 import { formatDate, formatRange } from '@/lib/dates';
 
-const emit = defineEmits<{ changed: [] }>();
-
 const auth = useAuthStore();
 const canManage = computed(() => auth.can(PERMISSIONS.ASSIGNMENTS_MANAGE));
 
@@ -107,7 +105,6 @@ async function save() {
     }
     formOpen.value = false;
     await load();
-    emit('changed');
     if (selected.value) {
       selected.value = groups.value.find((group) => group.id === selected.value?.id) ?? null;
     }
@@ -168,12 +165,13 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="page-header section-gap">
-    <h2>Grupos de pago</h2>
+  <div class="page-header">
+    <h1>Grupos de pago</h1>
     <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">
       Nuevo grupo
     </button>
   </div>
+  <p class="hint">Periodicidad y fecha de corte de cada grupo, y los períodos que se causan. Cada asignación pertenece a un grupo.</p>
 
   <AppModal
     :open="formOpen"

@@ -1,74 +1,72 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import type { RouteLocationRaw } from 'vue-router';
+import { listAuditEntries } from '@/api/audit';
 import { errorMessage } from '@/api/http';
-import { listPaymentRequests, REQUEST_STATUS_LABELS, type PaymentRequestSummary } from '@/api/payment-requests';
-import { listVouchers, monthLabel, VOUCHER_STATUS_LABELS, type Voucher, type VoucherStatus } from '@/api/petty-cash';
+import { REQUEST_STATUS_LABELS } from '@/api/payment-requests';
+import { monthLabel, VOUCHER_STATUS_LABELS } from '@/api/petty-cash';
 import { getBalances, type BalanceTotals } from '@/api/reports';
+import { listSettings } from '@/api/settings';
+import { listUsers } from '@/api/users';
 import AppIcon from '@/components/AppIcon.vue';
-import BalanceStats from '@/components/BalanceStats.vue';
+import ReportSummary from '@/components/reports/ReportSummary.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd } from '@/lib/money';
 import { REQUEST_STATUS_TONES, VOUCHER_STATUS_TONES } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { usePendingStore } from '@/stores/pending';
 
 const auth = useAuthStore();
-const router = useRouter();
-
-const DESCRIPTIONS: Record<string, string> = {
-  users: 'Cuentas y roles de acceso',
-  roles: 'Qué puede hacer cada rol',
-  people: 'Beneficiarios que cobran',
-  projects: 'Área, ámbito y vigencia',
-  assignments: 'Persona, proyecto, grupo de pago y monto',
-  accruals: 'Causar períodos con prorrateo',
-  'payment-requests': 'Enviar, aprobar y entregar fondos',
-  'petty-cash': 'Vales, rendiciones y arrastre de saldo',
-  reports: 'Saldos, pagos y estados de cuenta',
-  areas: 'Física, química, biología',
-  settings: 'Datos de la empresa para los PDFs',
-  'audit-log': 'Quién, cuándo y qué cambió',
-};
-
-const shortcuts = computed(() =>
-  router
-    .getRoutes()
-    .filter(({ name, meta }) => meta.navGroup && (!meta.permission || auth.can(meta.permission)) && name)
-    .map((route) => ({
-      path: route.path,
-      label: route.meta.navLabel!,
-      icon: route.meta.navIcon ?? 'arrow',
-      description: DESCRIPTIONS[String(route.name)] ?? '',
-    })),
-);
+const pending = usePendingStore();
 
 const canReport = computed(() => auth.can(PERMISSIONS.REPORTS_READ));
 const canSeeRequests = computed(() => auth.can(PERMISSIONS.PAYROLL_READ));
+const canSeeVouchers = computed(() => auth.can(PERMISSIONS.PETTY_CASH_READ));
 const decides = computed(() => auth.can(PERMISSIONS.PAYMENT_REQUESTS_DECIDE));
+const isAdmin = computed(() => auth.can(PERMISSIONS.USERS_MANAGE));
 
 const totals = ref<BalanceTotals | null>(null);
-const requests = ref<PaymentRequestSummary[]>([]);
 const error = ref('');
-const vouchers = ref<Voucher[]>([]);
-const canSeeVouchers = computed(() => auth.can(PERMISSIONS.PETTY_CASH_READ));
 
-// Vales que esperan acción: el receptor aprueba y desembolsa; el generador rinde lo desembolsado.
-// Se piden al servidor solo los estados pendientes de cada rol, no todos los vales.
-const pendingVoucherStatuses = computed<VoucherStatus[]>(() => (decides.value ? ['REQUESTED', 'APPROVED'] : ['DISBURSED']));
-const pendingVouchers = computed(() => vouchers.value);
+// Datos del administrador, que no participa en operaciones de dinero.
+const adminStats = ref<{ activeUsers: number; emptySettings: number; changesToday: number } | null>(null);
+const today = new Date().toLocaleDateString('sv-SE');
 
-async function loadPendingVouchers() {
-  const lists = await Promise.all(pendingVoucherStatuses.value.map((status) => listVouchers({ status })));
-  return lists.flat().sort((a, b) => b.id - a.id);
-}
+// Una tarea informativa muestra un dato del sistema, no trabajo pendiente.
+type Task = { count: number; title: string; detail: string; action: string; to: RouteLocationRaw; informative?: boolean };
 
-// Lo que espera una acción del usuario: el receptor decide y entrega; el generador completa borradores.
-const pending = computed(() =>
-  requests.value.filter((request) =>
-    decides.value ? ['SUBMITTED', 'APPROVED'].includes(request.status) : request.status === 'DRAFT',
-  ),
-);
+const requestsTo = (estado: string): RouteLocationRaw => ({ name: 'payment-requests', query: { estado } });
+
+// Lo que le toca hacer a cada rol, con un enlace al listado ya filtrado.
+const tasks = computed<Task[]>(() => {
+  const requests = pending.requests;
+  const vouchers = pending.vouchers.length;
+  if (decides.value) {
+    return [
+      { count: requests.filter((r) => r.status === 'SUBMITTED').length, title: 'Solicitudes por aprobar', detail: 'Enviadas por el Generador', action: 'Revisar', to: requestsTo('SUBMITTED') },
+      { count: requests.filter((r) => r.status === 'APPROVED' && r.outstandingCents > 0).length, title: 'Solicitudes por pagar', detail: 'Aprobadas con saldo pendiente', action: 'Registrar entregas', to: requestsTo('TO_PAY') },
+      { count: requests.filter((r) => r.status === 'APPROVED' && r.outstandingCents === 0).length, title: 'Pagadas, falta cerrar', detail: 'Todo entregado; cierra el ciclo', action: 'Cerrar', to: requestsTo('TO_CLOSE') },
+      { count: vouchers, title: 'Vales de caja chica', detail: 'Por aprobar o desembolsar', action: 'Ver cajas', to: { name: 'petty-cash' } },
+    ];
+  }
+  if (canSeeRequests.value) {
+    return [
+      { count: requests.filter((r) => r.status === 'DRAFT').length, title: 'Borradores por enviar', detail: 'Solicitudes que el Receptor todavía no ve', action: 'Enviar', to: requestsTo('DRAFT') },
+      { count: requests.filter((r) => r.status === 'SUBMITTED').length, title: 'Esperando decisión', detail: 'Enviadas al Receptor de Nómina', action: 'Ver', to: requestsTo('SUBMITTED') },
+      { count: vouchers, title: 'Vales por rendir', detail: 'Desembolsados sin comprobante', action: 'Rendir', to: { name: 'petty-cash' } },
+    ];
+  }
+  if (!adminStats.value) return [];
+  return [
+    { count: adminStats.value.emptySettings, title: 'Parámetros sin completar', detail: 'Datos que salen en los recibos y solicitudes en PDF', action: 'Completar', to: { name: 'settings' } },
+    { count: adminStats.value.activeUsers, title: 'Usuarios activos', detail: 'Cuentas con acceso al sistema', action: 'Ver usuarios', to: { name: 'users' }, informative: true },
+    { count: adminStats.value.changesToday, title: 'Cambios registrados hoy', detail: 'En el log de auditoría', action: 'Ver auditoría', to: { name: 'audit-log' }, informative: true },
+  ];
+});
+
+const taskTone = (task: Task) => (task.count > 0 && !task.informative ? 'task-has-work' : 'task-done');
+
 const pendingTitle = computed(() => (decides.value ? 'Solicitudes por decidir o pagar' : 'Borradores por enviar'));
 
 const greeting = (() => {
@@ -78,16 +76,27 @@ const greeting = (() => {
 
 const firstName = computed(() => auth.user?.name.split(' ')[0] ?? '');
 
+async function loadAdminStats() {
+  const [users, settings, audit] = await Promise.all([
+    listUsers(),
+    listSettings(),
+    auth.can(PERMISSIONS.AUDIT_READ) ? listAuditEntries({ from: today }) : null,
+  ]);
+  adminStats.value = {
+    activeUsers: users.filter((user) => user.active).length,
+    emptySettings: settings.filter((setting) => !setting.value.trim()).length,
+    changesToday: audit?.total ?? 0,
+  };
+}
+
 onMounted(async () => {
   try {
-    const [balances, list, allVouchers] = await Promise.all([
+    const [balances] = await Promise.all([
       canReport.value ? getBalances('project', {}) : null,
-      canSeeRequests.value ? listPaymentRequests() : [],
-      canSeeVouchers.value ? loadPendingVouchers() : [],
+      isAdmin.value ? loadAdminStats() : null,
+      pending.refresh(),
     ]);
     totals.value = balances?.totals ?? null;
-    requests.value = list;
-    vouchers.value = allVouchers;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -97,22 +106,44 @@ onMounted(async () => {
 <template>
   <header class="welcome">
     <h1>{{ greeting }}, {{ firstName }}</h1>
-    <p>
-      Entraste como <strong>{{ auth.user?.role.name }}</strong>.
-      <template v-if="!canSeeRequests">Este rol administra el sistema y no participa en operaciones de dinero.</template>
-    </p>
+    <p>Entraste como <strong>{{ auth.user?.role.name }}</strong>.</p>
   </header>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-  <BalanceStats v-if="totals" v-bind="totals" />
+  <template v-if="tasks.length">
+    <h2 class="section-title">{{ canSeeRequests ? 'Lo que te toca' : 'Estado del sistema' }}</h2>
+    <nav class="tasks" aria-label="Pendientes">
+      <RouterLink v-for="task in tasks" :key="task.title" :to="task.to" class="task" :class="taskTone(task)">
+        <span class="task-count">{{ task.count }}</span>
+        <strong>{{ task.title }}</strong>
+        <span class="task-sub">{{ task.detail }}</span>
+        <span class="task-go">
+          <template v-if="task.count > 0 || task.informative">{{ task.action }} <AppIcon name="arrow" :size="14" /></template>
+          <template v-else>Nada pendiente</template>
+        </span>
+      </RouterLink>
+    </nav>
+  </template>
+
+  <div v-if="!canSeeRequests" class="role-note">
+    <AppIcon name="info" :size="20" />
+    <p>Este rol administra el sistema y no participa en operaciones de dinero, por eso no ve montos ni solicitudes.</p>
+  </div>
+
+  <template v-if="totals">
+    <ReportSummary v-bind="totals" />
+    <p class="summary-link">
+      <RouterLink :to="{ name: 'reports' }">Ver reportes por persona y proyecto</RouterLink>
+    </p>
+  </template>
 
   <section v-if="canSeeRequests" class="card">
     <div class="page-header">
       <h2>{{ pendingTitle }}</h2>
-      <RouterLink to="/solicitudes-de-pago" class="button">Ver todas</RouterLink>
+      <RouterLink :to="{ name: 'payment-requests' }" class="button">Ver todas</RouterLink>
     </div>
-    <p v-if="pending.length === 0" class="hint">No hay nada pendiente por ahora.</p>
+    <p v-if="pending.pendingRequests.length === 0" class="hint">No hay nada pendiente por ahora.</p>
     <div v-else class="table-wrapper">
       <table>
         <thead>
@@ -126,7 +157,7 @@ onMounted(async () => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="request in pending" :key="request.id">
+          <tr v-for="request in pending.pendingRequests" :key="request.id">
             <td>#{{ request.id }}</td>
             <td>{{ request.project.code }} · {{ request.project.name }}</td>
             <td><StatusBadge :label="REQUEST_STATUS_LABELS[request.status]" :tone="REQUEST_STATUS_TONES[request.status]" /></td>
@@ -143,10 +174,10 @@ onMounted(async () => {
     </div>
   </section>
 
-  <section v-if="canSeeVouchers && pendingVouchers.length" class="card section-gap">
+  <section v-if="canSeeVouchers && pending.vouchers.length" class="card section-gap">
     <div class="page-header">
       <h2>{{ decides ? 'Vales por aprobar o desembolsar' : 'Vales por rendir' }}</h2>
-      <RouterLink to="/cajas-chicas" class="button">Ver cajas</RouterLink>
+      <RouterLink :to="{ name: 'petty-cash' }" class="button">Ver cajas</RouterLink>
     </div>
     <div class="table-wrapper">
       <table>
@@ -160,7 +191,7 @@ onMounted(async () => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="voucher in pendingVouchers" :key="voucher.id">
+          <tr v-for="voucher in pending.vouchers" :key="voucher.id">
             <td>{{ voucher.fund.name }} <span class="permission-code">{{ monthLabel(voucher.period) }}</span></td>
             <td>{{ voucher.concept }}</td>
             <td><StatusBadge :label="VOUCHER_STATUS_LABELS[voucher.status]" :tone="VOUCHER_STATUS_TONES[voucher.status]" /></td>
@@ -173,16 +204,4 @@ onMounted(async () => {
       </table>
     </div>
   </section>
-
-  <h2 class="section-title">Accesos rápidos</h2>
-  <nav class="shortcuts" aria-label="Accesos rápidos">
-    <RouterLink v-for="item in shortcuts" :key="item.path" :to="item.path" class="shortcut">
-      <span class="shortcut-icon"><AppIcon :name="item.icon" :size="20" /></span>
-      <span class="shortcut-text">
-        <strong>{{ item.label }}</strong>
-        <span>{{ item.description }}</span>
-      </span>
-      <AppIcon name="arrow" :size="16" />
-    </RouterLink>
-  </nav>
 </template>
