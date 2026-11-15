@@ -1577,3 +1577,24 @@ td small {
   border: 1px solid var(--border);
 }
 
+.permission-switch-col {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-shrink: 0;
+}
+
+.permission-status-text {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  min-width: 60px;
+  text-align: right;
+}
+
+.permission-status-text.is-active {
+  color: var(--accent);
+}
+
+.permission-status-text.is-inactive {
+  color: var(--muted);
+}
