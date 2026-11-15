@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { errorMessage } from '@/api/http';
-import { listRolesAndPermissions, updateRolePermissions, type PermissionItem, type Role } from '@/api/roles';
+import { listRolesAndPermissions, type PermissionItem, type Role } from '@/api/roles';
+import StatusBadge from '@/components/StatusBadge.vue';
 
 const roles = ref<Role[]>([]);
 const allPermissions = ref<PermissionItem[]>([]);
@@ -9,11 +10,6 @@ const selectedRoleId = ref<number | null>(null);
 const searchQuery = ref('');
 const loading = ref(true);
 const error = ref('');
-
-const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
-const saveErrorMessage = ref('');
-const savingPermissionCode = ref<string | null>(null);
-let saveFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const selectedRole = computed(() => roles.value.find((r) => r.id === selectedRoleId.value));
 
@@ -35,62 +31,6 @@ const filteredPermissions = computed(() => {
 
 function isPermissionEnabled(code: string): boolean {
   return activePermissionCodes.value.has(code);
-}
-
-async function onTogglePermission(code: string, event: Event) {
-  const target = event.target as HTMLInputElement;
-  const isChecked = target.checked;
-  const role = selectedRole.value;
-  if (!role) return;
-
-  const previousCodes = new Set(activePermissionCodes.value);
-  const nextCodes = new Set(previousCodes);
-
-  if (isChecked) {
-    nextCodes.add(code);
-  } else {
-    nextCodes.delete(code);
-  }
-
-  // Actualización optimista local
-  const permissionItem = allPermissions.value.find((p) => p.code === code) ?? {
-    code,
-    description: code,
-  };
-
-  const oldPermissionsList = [...role.permissions];
-  if (isChecked) {
-    role.permissions = [...role.permissions, permissionItem];
-  } else {
-    role.permissions = role.permissions.filter((p) => p.code !== code);
-  }
-
-  savingPermissionCode.value = code;
-  saveStatus.value = 'saving';
-  saveErrorMessage.value = '';
-
-  if (saveFeedbackTimeout) {
-    clearTimeout(saveFeedbackTimeout);
-  }
-
-  try {
-    const updated = await updateRolePermissions(role.id, Array.from(nextCodes));
-    role.permissions = updated.permissions;
-    saveStatus.value = 'saved';
-    saveFeedbackTimeout = setTimeout(() => {
-      if (saveStatus.value === 'saved') {
-        saveStatus.value = 'idle';
-      }
-    }, 3000);
-  } catch (e) {
-    // Revertir cambio local
-    role.permissions = oldPermissionsList;
-    target.checked = !isChecked;
-    saveStatus.value = 'error';
-    saveErrorMessage.value = errorMessage(e);
-  } finally {
-    savingPermissionCode.value = null;
-  }
 }
 
 onMounted(async () => {
@@ -121,7 +61,10 @@ onMounted(async () => {
   <div class="page-header">
     <h1>Roles y permisos</h1>
   </div>
-  <p class="hint">Selecciona un rol para visualizar y configurar sus permisos asignados en el sistema.</p>
+  <p class="hint">
+    Qué puede hacer cada rol. La matriz sigue la segregación de funciones del proyecto: se define en el sistema y no se
+    modifica desde aquí, para que ningún rol pueda darse permisos que no le corresponden.
+  </p>
 
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
@@ -143,21 +86,11 @@ onMounted(async () => {
       <div>
         <span>Permisos para <strong>{{ selectedRole?.name }}</strong>: </span>
         <span class="permissions-badge-count">
-          {{ activeCount }} de {{ allPermissions.length }} activos
+          {{ activeCount }} de {{ allPermissions.length }} asignados
         </span>
       </div>
 
       <div class="permissions-summary-actions">
-        <span v-if="saveStatus === 'saving'" class="permissions-save-feedback saving">
-          Guardando cambios…
-        </span>
-        <span v-else-if="saveStatus === 'saved'" class="permissions-save-feedback success">
-          ✓ Cambios guardados
-        </span>
-        <span v-else-if="saveStatus === 'error'" class="error" role="alert">
-          {{ saveErrorMessage || 'Error al guardar cambios' }}
-        </span>
-
         <input
           v-model="searchQuery"
           type="search"
@@ -168,7 +101,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Lista de permisos con switch -->
+    <!-- Lista de permisos del rol (solo lectura) -->
     <div class="permissions-list-container">
       <div
         v-for="permission in filteredPermissions"
@@ -181,30 +114,10 @@ onMounted(async () => {
           <code class="permission-code-badge">{{ permission.code }}</code>
         </div>
 
-        <div class="permission-switch-col">
-          <span
-            class="permission-status-text"
-            :class="isPermissionEnabled(permission.code) ? 'is-active' : 'is-inactive'"
-          >
-            {{ isPermissionEnabled(permission.code) ? 'Activo' : 'Inactivo' }}
-          </span>
-
-          <label
-            class="switch"
-            :class="{ 'is-disabled': savingPermissionCode === permission.code }"
-            :title="`Cambiar permiso ${permission.code}`"
-          >
-            <input
-              type="checkbox"
-              role="switch"
-              :aria-label="`Permiso ${permission.description}`"
-              :checked="isPermissionEnabled(permission.code)"
-              :disabled="savingPermissionCode === permission.code"
-              @change="onTogglePermission(permission.code, $event)"
-            />
-            <span class="switch-slider"></span>
-          </label>
-        </div>
+        <StatusBadge
+          :label="isPermissionEnabled(permission.code) ? 'Asignado' : 'No asignado'"
+          :tone="isPermissionEnabled(permission.code) ? 'success' : 'neutral'"
+        />
       </div>
 
       <p v-if="filteredPermissions.length === 0" class="hint" style="text-align: center; padding: 2rem 0;">

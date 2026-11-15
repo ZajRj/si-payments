@@ -98,10 +98,19 @@ export async function updateUser(actorId: number, id: number, { password, ...dat
       }
 
       // Como nadie puede quitarse su propio acceso, siempre queda al menos un administrador activo.
-      const changesOwnRole = data.roleId !== undefined && data.roleId !== current.role.id;
-      if (id === actorId && (data.active === false || changesOwnRole)) {
+      const changesRole = data.roleId !== undefined && data.roleId !== current.role.id;
+      if (id === actorId && (data.active === false || changesRole)) {
         throw new HttpError(409, 'SELF_LOCKOUT', 'No puedes cambiar tu propio rol ni desactivar tu propia cuenta');
       }
+
+      // Guardar sin cambios no toca la base de datos ni deja un registro vacío en la auditoría.
+      const unchanged =
+        !passwordHash &&
+        !changesRole &&
+        (data.name === undefined || data.name === current.name) &&
+        (data.email === undefined || data.email === current.email) &&
+        (data.active === undefined || data.active === current.active);
+      if (unchanged) return toUserDto(current);
 
       const updated = await tx.user.update({ where: { id }, data: { ...data, passwordHash }, select: publicUserSelect });
       const user = toUserDto(updated);

@@ -1405,11 +1405,6 @@ td small {
   height: 40px;
 }
 
-.switch.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
 /* ---------- Roles & Permissions View ---------- */
 
 .role-selector-card {
@@ -1541,22 +1536,6 @@ td small {
   font-size: 0.75rem;
 }
 
-.permissions-save-feedback {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.permissions-save-feedback.saving {
-  color: var(--muted);
-}
-
-.permissions-save-feedback.success {
-  color: var(--accent);
-}
-
 .permission-item-card {
   display: flex;
   align-items: center;
@@ -1567,11 +1546,6 @@ td small {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   transition: border-color var(--ease), box-shadow var(--ease), background-color var(--ease);
-}
-
-.permission-item-card:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-alt);
 }
 
 .permission-item-card.is-active {
@@ -1603,24 +1577,3 @@ td small {
   border: 1px solid var(--border);
 }
 
-.permission-switch-col {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  flex-shrink: 0;
-}
-
-.permission-status-text {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  min-width: 60px;
-  text-align: right;
-}
-
-.permission-status-text.is-active {
-  color: var(--accent);
-}
-
-.permission-status-text.is-inactive {
-  color: var(--muted);
-}
