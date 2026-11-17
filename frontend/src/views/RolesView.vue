@@ -207,7 +207,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <p v-if="filteredPermissions.length === 0" class="hint" style="text-align: center; padding: 2rem 0;">
+      <p v-if="filteredPermissions.length === 0" class="hint empty-hint">
         No se encontraron permisos que coincidan con "{{ searchQuery }}".
       </p>
     </div>

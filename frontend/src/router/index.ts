@@ -12,6 +12,8 @@ declare module 'vue-router' {
     navIcon?: IconName;
     // Sección de la barra lateral; sin grupo va arriba de todo.
     navGroup?: string;
+    // Permiso para mostrar el enlace en el menú, si es distinto del que abre la ruta.
+    navPermission?: string;
   }
 }
 
@@ -68,31 +70,44 @@ export const router = createRouter({
           path: 'causacion',
           name: 'accruals',
           component: () => import('@/views/AccrualsView.vue'),
-          meta: { navLabel: 'Causación', navIcon: 'calculator', navGroup: 'Nómina', permission: PERMISSIONS.PAYROLL_READ },
+          meta: { navLabel: 'Causación', navIcon: 'calculator', navGroup: 'Pagos', permission: PERMISSIONS.PAYROLL_READ },
         },
         {
           path: 'solicitudes-de-pago',
           name: 'payment-requests',
           component: () => import('@/views/PaymentRequestsView.vue'),
-          meta: { navLabel: 'Solicitudes de pago', navIcon: 'send', navGroup: 'Nómina', permission: PERMISSIONS.PAYROLL_READ },
+          meta: { navLabel: 'Solicitudes de pago', navIcon: 'send', navGroup: 'Pagos', permission: PERMISSIONS.PAYROLL_READ },
         },
         {
           path: 'cajas-chicas',
           name: 'petty-cash',
           component: () => import('@/views/PettyCashView.vue'),
-          meta: { navLabel: 'Cajas chicas', navIcon: 'wallet', navGroup: 'Nómina', permission: PERMISSIONS.PETTY_CASH_READ },
+          meta: { navLabel: 'Cajas chicas', navIcon: 'wallet', navGroup: 'Pagos', permission: PERMISSIONS.PETTY_CASH_READ },
         },
         {
           path: 'reportes',
           name: 'reports',
           component: () => import('@/views/ReportsView.vue'),
-          meta: { navLabel: 'Reportes', navIcon: 'chart', navGroup: 'Nómina', permission: PERMISSIONS.REPORTS_READ },
+          meta: { navLabel: 'Reportes', navIcon: 'chart', navGroup: 'Control', permission: PERMISSIONS.REPORTS_READ },
         },
         {
           path: 'areas',
           name: 'areas',
           component: () => import('@/views/AreasView.vue'),
-          meta: { navLabel: 'Áreas', navIcon: 'grid', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
+          meta: {
+            navLabel: 'Áreas',
+            navIcon: 'grid',
+            navGroup: 'Catálogos',
+            permission: PERMISSIONS.CATALOGS_READ,
+            // Son valores fijos: en el menú solo los ve quien los administra.
+            navPermission: PERMISSIONS.CATALOGS_MANAGE,
+          },
+        },
+        {
+          path: 'grupos-de-pago',
+          name: 'payment-groups',
+          component: () => import('@/views/PaymentGroupsView.vue'),
+          meta: { navLabel: 'Grupos de pago', navIcon: 'calendar', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
         },
         {
           path: 'parametros',
@@ -104,7 +119,7 @@ export const router = createRouter({
           path: 'auditoria',
           name: 'audit-log',
           component: () => import('@/views/AuditLogView.vue'),
-          meta: { navLabel: 'Auditoría', navIcon: 'history', navGroup: 'Administración', permission: PERMISSIONS.AUDIT_READ },
+          meta: { navLabel: 'Auditoría', navIcon: 'history', navGroup: 'Control', permission: PERMISSIONS.AUDIT_READ },
         },
         {
           path: 'sin-acceso',

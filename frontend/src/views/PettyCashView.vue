@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import {
   approveVoucher,
@@ -23,15 +23,18 @@ import {
   type Voucher,
 } from '@/api/petty-cash';
 import { listProjects, type Project } from '@/api/projects';
+import AppIcon from '@/components/AppIcon.vue';
 import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { formatUsd, parseUsd } from '@/lib/money';
 import { VOUCHER_STATUS_TONES, activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
+import { usePendingStore } from '@/stores/pending';
 import { formatDate } from '@/lib/dates';
 
 const auth = useAuthStore();
+const pending = usePendingStore();
 const canManage = computed(() => auth.can(PERMISSIONS.PETTY_CASH_MANAGE));
 const canRequest = computed(() => auth.can(PERMISSIONS.PETTY_CASH_REQUEST));
 
@@ -133,14 +136,25 @@ async function selectFund(id: number, periodId?: number) {
 }
 
 const route = useRoute();
-const detailEl = ref<HTMLElement | null>(null);
+const router = useRouter();
 
-// Abre una caja desde la lista y lleva la vista al detalle, que queda arriba de la lista.
-async function openFund(id: number) {
+// La caja abierta va en la URL (?fund=): Atrás vuelve a la lista y el enlace se puede compartir.
+const fundId = computed(() => {
+  const id = Number(route.query.fund);
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
+
+async function showFund(id: number | null) {
+  confirmingClose.value = false;
+  if (id === null) {
+    selected.value = null;
+    return;
+  }
   await selectFund(id);
-  await nextTick();
-  detailEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  window.scrollTo({ top: 0 });
 }
+
+watch(fundId, (id) => void showFund(id));
 
 async function viewPeriod(id: number) {
   viewedPeriodId.value = id;
@@ -158,7 +172,9 @@ async function run(action: () => Promise<unknown>) {
   try {
     await action();
     voucherAction.value = null;
+    voucherConfirm.value = null;
     await selectFund(selected.value.id, viewedPeriodId.value || undefined);
+    void pending.refresh();
   } catch (e) {
     detailError.value = errorMessage(e);
   } finally {
@@ -204,6 +220,25 @@ async function submitVoucher() {
   if (!detailError.value) voucherFormOpen.value = false;
 }
 
+// Aprobar, desembolsar y cancelar un vale se confirman antes: desembolsar entrega dinero.
+type VoucherConfirm = { kind: 'approve' | 'disburse' | 'cancel'; voucher: Voucher };
+const voucherConfirm = ref<VoucherConfirm | null>(null);
+
+const VOUCHER_CONFIRM_TEXT: Record<VoucherConfirm['kind'], { title: string; button: string }> = {
+  approve: { title: 'Aprobar vale', button: 'Aprobar vale' },
+  disburse: { title: 'Desembolsar vale', button: 'Confirmar entrega' },
+  cancel: { title: 'Cancelar vale', button: 'Cancelar vale' },
+};
+
+function confirmVoucher() {
+  const current = voucherConfirm.value;
+  if (!current) return;
+  const id = current.voucher.id;
+  if (current.kind === 'approve') return run(() => approveVoucher(id));
+  if (current.kind === 'disburse') return run(() => disburseVoucher(id));
+  return run(() => cancelVoucher(id));
+}
+
 // Rechazo y rendición de un vale.
 const voucherAction = ref<{ type: 'reject' | 'settle'; voucher: Voucher } | null>(null);
 const actionForm = reactive({ reason: '', spent: '', receiptReference: '', receiptDate: today });
@@ -240,20 +275,21 @@ function submitVoucherAction() {
 
 onMounted(async () => {
   await load();
-  const fundId = Number(route.query.fund);
-  if (fundId) await openFund(fundId);
+  await showFund(fundId.value);
 });
 </script>
 
 <template>
-  <div class="page-header">
-    <h1>Cajas chicas</h1>
-    <button v-if="canManage" type="button" class="button button-primary" @click="openForm(null)">Nueva caja</button>
-  </div>
-  <p class="hint">
-    Cada caja se asigna a un proyecto y funciona por meses: apertura, vales (solicitud, aprobación, desembolso y rendición
-    con comprobante) y cierre. El saldo final pasa al mes siguiente.
-  </p>
+  <template v-if="!selected">
+    <div class="page-header">
+      <h1>Cajas chicas</h1>
+      <button v-if="canManage" type="button" class="button button-primary" @click="openForm(null)">Nueva caja</button>
+    </div>
+    <p class="hint">
+      Cada caja se asigna a un proyecto y funciona por meses: apertura, vales (solicitud, aprobación, desembolso y rendición
+      con comprobante) y cierre. El saldo final pasa al mes siguiente.
+    </p>
+  </template>
 
   <AppModal
     :open="formOpen"
@@ -286,11 +322,26 @@ onMounted(async () => {
     </form>
   </AppModal>
 
-  <section v-if="selected" ref="detailEl" class="card section-gap">
-    <div class="page-header">
-      <h2>{{ selected.name }} · {{ selected.project.code }}</h2>
-      <button type="button" class="button" @click="selected = null; confirmingClose = false">Cerrar detalle</button>
+  <template v-if="selected">
+    <nav aria-label="Ruta">
+      <ol class="crumbs">
+        <li>
+          <RouterLink :to="{ name: 'petty-cash' }"><AppIcon name="back" :size="14" /> Cajas chicas</RouterLink>
+        </li>
+        <li><span aria-current="page">{{ selected.name }}</span></li>
+      </ol>
+    </nav>
+    <div class="detail-head">
+      <div>
+        <h1>
+          {{ selected.name }}
+          <StatusBadge :label="selected.active ? 'Activa' : 'Inactiva'" :tone="activeTone(selected.active)" />
+        </h1>
+        <p class="hint">{{ selected.project.code }} · {{ selected.project.name }}</p>
+      </div>
+      <button v-if="canManage" type="button" class="button" @click="openForm(selected)">Editar caja</button>
     </div>
+  <section class="card">
 
     <template v-if="selected.openPeriod">
       <p>
@@ -308,7 +359,7 @@ onMounted(async () => {
         <button v-if="canRequest && selected.active" type="button" class="button button-primary" @click="openVoucherForm">
           Solicitar vale
         </button>
-        <button v-if="canManage" type="button" class="button" :disabled="busy" @click="confirmingClose = true">
+        <button v-if="canManage" type="button" class="button button-danger" :disabled="busy" @click="confirmingClose = true">
           Cerrar mes
         </button>
       </div>
@@ -328,7 +379,7 @@ onMounted(async () => {
             <button type="button" class="button" @click="confirmingClose = false">Cancelar</button>
             <button
               type="button"
-              class="button button-primary"
+              class="button button-danger-solid"
               :disabled="busy"
               @click="confirmingClose = false; run(() => closePeriod(selected!.openPeriod!.id))"
             >
@@ -412,10 +463,49 @@ onMounted(async () => {
         </template>
         <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
         <div class="actions">
-          <button type="button" class="button" @click="voucherAction = null">Cancelar</button>
-          <button type="submit" class="button button-primary" :disabled="busy">Confirmar</button>
+          <button type="button" class="button" @click="voucherAction = null">Volver</button>
+          <button
+            type="submit"
+            class="button"
+            :class="voucherAction.type === 'reject' ? 'button-danger-solid' : 'button-primary'"
+            :disabled="busy"
+          >
+            {{ voucherAction.type === 'reject' ? 'Rechazar vale' : 'Rendir vale' }}
+          </button>
         </div>
       </form>
+    </AppModal>
+
+    <AppModal
+      :open="Boolean(voucherConfirm)"
+      :title="voucherConfirm ? `${VOUCHER_CONFIRM_TEXT[voucherConfirm.kind].title} #${voucherConfirm.voucher.id}` : ''"
+      @close="voucherConfirm = null"
+    >
+      <div v-if="voucherConfirm" class="form-grid">
+        <p class="hint">
+          {{ voucherConfirm.voucher.concept }} · {{ voucherConfirm.voucher.beneficiary }} ·
+          <strong>{{ formatUsd(voucherConfirm.voucher.amountCents) }}</strong>
+        </p>
+        <p v-if="voucherConfirm.kind === 'approve'" class="hint">El monto queda reservado en la caja hasta que se desembolse.</p>
+        <p v-else-if="voucherConfirm.kind === 'disburse'" class="hint">
+          Confirma que entregaste {{ formatUsd(voucherConfirm.voucher.amountCents) }} a {{ voucherConfirm.voucher.beneficiary }}.
+          Después deberá rendirlo con un comprobante.
+        </p>
+        <p v-else class="hint">El vale deja de estar pendiente y no se puede reactivar.</p>
+        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
+        <div class="actions">
+          <button type="button" class="button" @click="voucherConfirm = null">Volver</button>
+          <button
+            type="button"
+            class="button"
+            :class="voucherConfirm.kind === 'cancel' ? 'button-danger-solid' : 'button-primary'"
+            :disabled="busy"
+            @click="confirmVoucher"
+          >
+            {{ VOUCHER_CONFIRM_TEXT[voucherConfirm.kind].button }}
+          </button>
+        </div>
+      </div>
     </AppModal>
 
     <p v-if="detailError" class="error section-gap" role="alert">{{ detailError }}</p>
@@ -461,29 +551,29 @@ onMounted(async () => {
             <td>
               <div class="actions">
                 <template v-if="voucher.status === 'REQUESTED'">
-                  <button v-if="canManage" type="button" class="button" :disabled="busy" @click="run(() => approveVoucher(voucher.id))">
-                    Aprobar
-                  </button>
-                  <button v-if="canManage" type="button" class="button" @click="openVoucherAction('reject', voucher)">
+                  <button v-if="canManage" type="button" class="button button-danger" @click="openVoucherAction('reject', voucher)">
                     Rechazar
                   </button>
-                  <button v-if="canRequest" type="button" class="button" :disabled="busy" @click="run(() => cancelVoucher(voucher.id))">
+                  <button v-if="canManage" type="button" class="button button-primary" :disabled="busy" @click="voucherConfirm = { kind: 'approve', voucher }">
+                    Aprobar
+                  </button>
+                  <button v-if="canRequest" type="button" class="button button-danger" :disabled="busy" @click="voucherConfirm = { kind: 'cancel', voucher }">
                     Cancelar
                   </button>
                 </template>
                 <button
                   v-if="voucher.status === 'APPROVED' && canManage"
                   type="button"
-                  class="button"
+                  class="button button-primary"
                   :disabled="busy"
-                  @click="run(() => disburseVoucher(voucher.id))"
+                  @click="voucherConfirm = { kind: 'disburse', voucher }"
                 >
                   Desembolsar
                 </button>
                 <button
                   v-if="voucher.status === 'DISBURSED' && canRequest"
                   type="button"
-                  class="button"
+                  class="button button-primary"
                   @click="openVoucherAction('settle', voucher)"
                 >
                   Rendir
@@ -533,6 +623,7 @@ onMounted(async () => {
       </table>
     </div>
   </section>
+  </template>
 
   <template v-if="!selected">
   <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -558,7 +649,7 @@ onMounted(async () => {
           <td><StatusBadge :label="fund.active ? 'Activa' : 'Inactiva'" :tone="activeTone(fund.active)" /></td>
           <td>
             <div class="actions">
-              <button type="button" class="button" @click="openFund(fund.id)">Ver</button>
+              <RouterLink class="button" :to="{ name: 'petty-cash', query: { fund: fund.id } }">Ver</RouterLink>
               <button v-if="canManage" type="button" class="button" @click="openForm(fund)">Editar</button>
             </div>
           </td>
