@@ -12,8 +12,8 @@ services:
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     volumes:
       - backend-data:/data
-    ports:
-      - "${BACKEND_PORT:-3003}:3000"
+    # Sin puerto publicado: solo el nginx del frontend llega al backend, por la red de Docker.
+    # Publicarlo permitiría saltarse nginx (sin HTTPS y falseando X-Forwarded-For).
     healthcheck:
       test:
         - CMD
