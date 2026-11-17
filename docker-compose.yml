@@ -8,6 +8,7 @@ services:
       DATABASE_URL: file:/data/app.db
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env (ver .env.example)}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     volumes:
       - backend-data:/data

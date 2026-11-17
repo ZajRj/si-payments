@@ -377,11 +377,18 @@ async function voucherTransition(
   });
 }
 
+// Solo quien pidió el vale puede cancelarlo o rendirlo: otro solicitante no actúa sobre vales ajenos.
+function assertRequester(voucher: VoucherRecord, actorId: number) {
+  if (voucher.requestedById !== actorId) {
+    throw new HttpError(403, 'NOT_VOUCHER_REQUESTER', 'Solo quien solicitó el vale puede hacer esta acción');
+  }
+}
+
 export function cancelVoucher(actorId: number, id: number) {
-  return voucherTransition(actorId, id, 'REQUESTED', 'cancelar', async () => ({
-    status: 'CANCELLED',
-    cancelledAt: new Date(),
-  }));
+  return voucherTransition(actorId, id, 'REQUESTED', 'cancelar', async (voucher) => {
+    assertRequester(voucher, actorId);
+    return { status: 'CANCELLED', cancelledAt: new Date() };
+  });
 }
 
 // Aprobar reserva el monto: el saldo disponible debe cubrirlo.
@@ -419,6 +426,7 @@ export function settleVoucher(
   { spentCents, receiptReference, receiptDate }: { spentCents: number; receiptReference: string; receiptDate: Date },
 ) {
   return voucherTransition(actorId, id, 'DISBURSED', 'rendir', async (voucher) => {
+    assertRequester(voucher, actorId);
     if (spentCents > voucher.amountCents) {
       throw new HttpError(400, 'SPENT_EXCEEDS_DISBURSED', 'Lo gastado no puede superar lo desembolsado');
     }

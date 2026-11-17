@@ -201,6 +201,25 @@ describe('ciclo mensual', () => {
     expect(ofPeriod).toHaveLength(5);
   });
 
+  it('solo quien pidió el vale lo cancela o lo rinde', async () => {
+    const role = await prisma.role.findUniqueOrThrow({ where: { code: 'PAYROLL_GENERATOR' } });
+    await admin
+      .post('/api/users')
+      .send({ email: 'generador2@example.com', name: 'Otro Generador', password: 'Clave-Segura-1', roleId: role.id })
+      .expect(201);
+    const otherGenerator = await loginAs('generador2@example.com', 'Clave-Segura-1');
+
+    const voucherId = (await requestVoucher(1_000, 'Vale ajeno').expect(201)).body.voucher.id;
+    const res = await otherGenerator.post(`/api/petty-cash/vouchers/${voucherId}/cancel`).expect(403);
+    expect(res.body.error.code).toBe('NOT_VOUCHER_REQUESTER');
+
+    await receiver.post(`/api/petty-cash/vouchers/${voucherId}/approve`).expect(200);
+    await receiver.post(`/api/petty-cash/vouchers/${voucherId}/disburse`).expect(200);
+    const settle = { spentCents: 1_000, receiptReference: 'F-1', receiptDate: today };
+    await otherGenerator.post(`/api/petty-cash/vouchers/${voucherId}/settle`).send(settle).expect(403);
+    await generator.post(`/api/petty-cash/vouchers/${voucherId}/settle`).send(settle).expect(200);
+  });
+
   it('no desactiva una caja con un mes abierto', async () => {
     const res = await receiver.patch(`/api/petty-cash/funds/${fundId}`).send({ active: false }).expect(409);
     expect(res.body.error.code).toBe('PETTY_CASH_FUND_HAS_OPEN_PERIOD');
