@@ -33,10 +33,8 @@ authRouter.post('/login', loginRateLimit, async (req, res) => {
   const { email, password } = loginSchema.parse(req.body);
   const user = await login(email, password);
 
-  res.cookie(SESSION_COOKIE, signSessionToken(user.id), {
-    ...cookieOptions,
-    maxAge: env.JWT_EXPIRES_IN_HOURS * 60 * 60 * 1000,
-  });
+  // Cookie de sesión (sin maxAge): se borra al cerrar el navegador. El token sigue venciendo a las JWT_EXPIRES_IN_HOURS.
+  res.cookie(SESSION_COOKIE, signSessionToken(user.id), cookieOptions);
   res.json({ user });
 });
 

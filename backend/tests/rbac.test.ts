@@ -30,6 +30,8 @@ describe('autenticación', () => {
 
     expect(res.headers['set-cookie']?.[0]).toMatch(/HttpOnly/);
     expect(res.headers['set-cookie']?.[0]).toMatch(/SameSite=Strict/);
+    // Cookie de sesión: el navegador la borra al cerrarse.
+    expect(res.headers['set-cookie']?.[0]).not.toMatch(/Max-Age|Expires/i);
     expect(res.body.user.permissions).toContain(PERMISSIONS.USERS_MANAGE);
     expect(JSON.stringify(res.body)).not.toContain('passwordHash');
   });
