@@ -97,7 +97,7 @@ export const router = createRouter({
           meta: {
             navLabel: 'Áreas',
             navIcon: 'grid',
-            navGroup: 'Catálogos',
+            navGroup: 'Control',
             permission: PERMISSIONS.CATALOGS_READ,
             // Son valores fijos: en el menú solo los ve quien los administra.
             navPermission: PERMISSIONS.CATALOGS_MANAGE,
@@ -107,7 +107,7 @@ export const router = createRouter({
           path: 'grupos-de-pago',
           name: 'payment-groups',
           component: () => import('@/views/PaymentGroupsView.vue'),
-          meta: { navLabel: 'Grupos de pago', navIcon: 'calendar', navGroup: 'Catálogos', permission: PERMISSIONS.CATALOGS_READ },
+          meta: { navLabel: 'Grupos de pago', navIcon: 'calendar', navGroup: 'Control', permission: PERMISSIONS.CATALOGS_READ },
         },
         {
           path: 'parametros',

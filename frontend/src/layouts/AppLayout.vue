@@ -11,7 +11,7 @@ const pending = usePendingStore();
 const route = useRoute();
 const router = useRouter();
 
-const GROUP_ORDER = ['', 'Operación', 'Pagos', 'Control', 'Catálogos', 'Administración'];
+const GROUP_ORDER = ['', 'Operación', 'Pagos', 'Control','Administración'];
 
 // Enlaces visibles para el usuario, agrupados por sección.
 const navItems = computed(() =>
