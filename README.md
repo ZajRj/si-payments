@@ -1,6 +1,6 @@
 # Sistema de Control de Pagos y Asignaciones
 
-Proyecto final de Sistemas de Información (Universidad de Carabobo). El enunciado está en [proyecto.md](proyecto.md).
+Proyecto final de Sistemas de Información (Universidad de Carabobo). El enunciado está en [proyecto.md](proyecto.md). La arquitectura, las decisiones técnicas y el estado del proyecto están en [docs/DOCUMENTACION-TECNICA.md](docs/DOCUMENTACION-TECNICA.md).
 
 Estado actual: autenticación, RBAC, gestión de usuarios, log de auditoría, parámetros, catálogos (áreas, grupos de pago y períodos), personas, proyectos, asignaciones, causación con prorrateo, solicitudes de pago con pagos parciales FIFO, cajas chicas, reportes y PDFs de recibos individuales y solicitudes consolidadas.
 
