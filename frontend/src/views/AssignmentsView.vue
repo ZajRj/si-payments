@@ -385,7 +385,14 @@ onMounted(load);
               >
                 Monto
               </button>
-              <button type="button" class="button" @click="openAction('end', assignment)">Fecha de fin</button>
+              <button
+                v-if="status(assignment) !== 'Finalizada'"
+                type="button"
+                class="button"
+                @click="openAction('end', assignment)"
+              >
+                Fecha de fin
+              </button>
             </div>
           </td>
         </tr>
