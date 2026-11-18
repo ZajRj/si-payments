@@ -5,13 +5,13 @@ import { sameName } from '../../lib/names.js';
 import { prisma } from '../../lib/prisma.js';
 import { isUniqueViolation } from '../../lib/prisma-errors.js';
 
-type AreaInput = { name: string; active?: boolean };
+type AreaInput = { name: string; description: string; active?: boolean };
 
 export function listAreas() {
   return prisma.area.findMany({ orderBy: { name: 'asc' } });
 }
 
-// Las áreas no se borran: los proyectos las referencian. Se desactivan.
+// Las áreas no se borran: los proyectos las referencian. Se desactivan (lo refuerza el trigger area_no_delete).
 export async function createArea(actorId: number, data: AreaInput) {
   try {
     return await prisma.$transaction(async (tx) => {

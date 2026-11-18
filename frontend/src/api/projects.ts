@@ -19,8 +19,8 @@ export type Project = {
   assignmentCount: number;
 };
 
+// El código no se envía: el servidor lo genera a partir del área y no se edita.
 export type ProjectPayload = {
-  code: string;
   name: string;
   areaId: number;
   scope: Scope;
@@ -34,6 +34,12 @@ export async function listProjects(filters: { active?: boolean } = {}) {
   if (filters.active !== undefined) params.set('active', String(filters.active));
   const { projects } = await http<{ projects: Project[] }>(`/projects?${params}`);
   return projects;
+}
+
+// Código que recibirá un proyecto nuevo del área (FIS-003). El definitivo se asigna al guardar.
+export async function nextProjectCode(areaId: number) {
+  const { code } = await http<{ code: string }>(`/projects/next-code?areaId=${areaId}`);
+  return code;
 }
 
 export async function createProject(payload: ProjectPayload) {

@@ -249,9 +249,15 @@ onMounted(load);
       <label class="field">
         Monto por período (USD)
         <input v-model="form.amount" inputmode="decimal" required placeholder="150.00" />
+        <span class="hint">Lo que cobra por cada período completo del grupo.</span>
       </label>
+      <p class="notice field-wide">
+        <strong>Desde y hasta</strong> son los días en que la persona trabaja en el proyecto y gana su asignación. Los
+        <strong>períodos</strong> del grupo de pago son el calendario de corte y pago. Si la persona trabaja solo una parte de
+        un período, cobra la proporción de días (prorrateo).
+      </p>
       <label class="field">
-        Desde
+        Desde (primer día que cobra)
         <input
           v-model="form.startDate"
           type="date"
@@ -261,9 +267,9 @@ onMounted(load);
         />
       </label>
       <label class="field">
-        Hasta (opcional)
+        Hasta (último día que cobra, opcional)
         <input v-model="form.endDate" type="date" :min="form.startDate" :max="selectedProject?.endDate" />
-        <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
+        <span class="hint">Vacío: cobra hasta el fin de la vigencia del proyecto.</span>
       </label>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
       <div class="actions">
@@ -284,15 +290,20 @@ onMounted(load);
   >
     <form v-if="action" class="form-grid" @submit.prevent="saveAction">
       <template v-if="action.type === 'end'">
+        <p class="hint">
+          Es el último día en que {{ action.assignment.person.name }} gana esta asignación en el proyecto. Desde el día
+          siguiente ya no se le causa nada; si el fin cae a mitad de un período, ese período se paga en proporción a los
+          días trabajados. No se puede mover a una fecha que cambie días de un período ya causado.
+        </p>
         <label class="field">
-          Hasta
+          Último día que cobra
           <input
             v-model="actionForm.endDate"
             type="date"
             :min="action.assignment.startDate"
             :max="action.assignment.project.endDate"
           />
-          <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
+          <span class="hint">Vacío: cobra hasta el fin de la vigencia del proyecto.</span>
         </label>
       </template>
       <template v-else>
@@ -327,7 +338,7 @@ onMounted(load);
       Proyecto
       <select v-model.number="filters.projectId">
         <option :value="0">Todos</option>
-        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }}</option>
+        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }} · {{ project.name }}</option>
       </select>
     </label>
     <label class="field">
@@ -354,8 +365,8 @@ onMounted(load);
           <th scope="col">Proyecto</th>
           <th scope="col">Grupo de pago</th>
           <th scope="col" class="num">Monto por período</th>
-          <th scope="col">Desde</th>
-          <th scope="col">Hasta</th>
+          <th scope="col" title="Primer día que cobra">Desde</th>
+          <th scope="col" title="Último día que cobra">Hasta</th>
           <th scope="col">Estado</th>
           <th v-if="canManage" scope="col"><span class="sr-only">Acciones</span></th>
         </tr>

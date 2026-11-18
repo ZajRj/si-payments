@@ -181,7 +181,7 @@ Al crear un módulo nuevo, todo servicio que escriba en la base de datos debe ha
 | Catálogo | Qué es |
 |---|---|
 | Parámetros | Datos de la empresa y textos para los documentos. Las claves válidas están en [settings.definitions.ts](backend/src/modules/settings/settings.definitions.ts). |
-| Áreas | Física, Química, Biología y las que agregue el administrador. No se borran, se desactivan. |
+| Áreas | Física, Química, Biología y las que agregue el administrador. Cada una tiene una descripción obligatoria que dice qué proyectos van en ella. No se borran, se desactivan; un trigger lo impide incluso con SQL directo. |
 | Grupos de pago | Periodicidad (semanal, quincenal, mensual) y día de corte personalizable. Se gestionan en Catálogos › Grupos de pago, a cargo del Generador de Nómina. Cada grupo genera sus períodos de pago. |
 
 ### Períodos y fechas de corte
@@ -214,16 +214,17 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 | Entidad | Qué es |
 |---|---|
 | Persona | Beneficiario que cobra, sin usuario en el sistema. La cédula se guarda como `V-12345678` o `E-12345678` y no se repite: `v12.345.678` o `V-012345678` se normalizan a la misma. Teléfono y email son opcionales; vacíos se guardan como `null`. |
-| Proyecto | Código único, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). |
-| Asignación | Persona × proyecto × grupo de pago, con un monto en USD por cada período completo y fechas desde y hasta. Sin fecha hasta, dura lo que dure el proyecto. |
+| Proyecto | Código, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). El código se genera a partir del área (`FIS-001`, `QUI-002`…: tres letras del área sin acentos y un correlativo) y no se edita. `GET /api/projects/next-code?areaId=` devuelve el siguiente como vista previa. |
+| Asignación | Persona × proyecto × grupo de pago, con un monto en USD por cada período completo y fechas desde y hasta: los días en que la persona trabaja y gana la asignación. Los períodos del grupo son el calendario de corte y pago; si la persona trabaja solo una parte de un período, cobra en proporción (ver Causación). Sin fecha hasta, dura lo que dure el proyecto. |
 
 ### Reglas
 
 - **Dinero en centavos:** los montos viajan y se guardan como enteros (`amountCents`; `15050` es USD 150,50), para que sumas y prorrateos no pierdan centavos. El frontend los convierte al mostrarlos.
-- **Dentro de la vigencia:** una asignación debe empezar y terminar dentro de la vigencia de su proyecto. Por lo mismo, no se puede acortar la vigencia de un proyecto si deja asignaciones fuera.
+- **Vigencia de un proyecto nuevo:** no se crea un proyecto con la vigencia ya terminada (fin anterior a hoy). Sí puede empezar en el pasado, para registrar un proyecto en curso o los que vienen de Excel; el formulario avisa que es retroactivo.
+- **Dentro de la vigencia:** una asignación debe empezar y terminar dentro de la vigencia de su proyecto. Por lo mismo, no se puede acortar la vigencia de un proyecto si deja asignaciones fuera. Si el cambio altera días ya causados, se rechaza antes por eso (ver Causación).
 - **Sin solapamientos:** una persona no puede tener dos asignaciones del mismo proyecto y grupo de pago con días en común, porque se le causaría dos veces el mismo período.
 - **El monto no se edita:** un cambio de monto (`POST /api/assignments/:id/amount-change`) cierra la asignación el día anterior y crea otra desde la fecha indicada, en una sola transacción. Así la causación sabe qué monto correspondía a cada día y queda el historial. De una asignación solo se puede cambiar la fecha de fin.
-- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
+- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. Áreas y proyectos tienen además un trigger que impide borrarlos con SQL directo. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
 - **Límite conocido:** el control de solapamientos se hace en el servicio, no con una restricción de la base de datos. Con SQLite las escrituras se serializan, así que en la práctica no hay carreras.
 
 ## Causación

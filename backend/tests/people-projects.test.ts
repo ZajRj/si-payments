@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { prisma } from '../src/lib/prisma.js';
 import { loginAs } from './helpers.js';
 
 type Agent = Awaited<ReturnType<typeof loginAs>>;
@@ -119,6 +120,36 @@ describe('proyectos', () => {
     await generator.patch(`/api/projects/${projectId}`).send({ endDate: '2026-09-30' }).expect(409);
     await generator.patch(`/api/projects/${projectId}`).send({ startDate: '2026-04-01' }).expect(409);
     await generator.patch(`/api/projects/${projectId}`).send({ endDate: '2026-10-31' }).expect(200);
+  });
+
+  it('genera el código a partir del área y no deja editarlo', async () => {
+    const preview = await generator.get('/api/projects/next-code').query({ areaId: physicsId }).expect(200);
+    expect(preview.body.code).toMatch(/^FIS-\d{3}$/);
+
+    const res = await generator
+      .post('/api/projects')
+      .send({ name: 'Código automático', areaId: physicsId, scope: 'INTERNAL', startDate: '2026-01-01', endDate: '2026-12-31' })
+      .expect(201);
+    expect(res.body.project.code).toBe(preview.body.code);
+
+    const next = await generator.get('/api/projects/next-code').query({ areaId: physicsId }).expect(200);
+    expect(Number(next.body.code.slice(4))).toBe(Number(res.body.project.code.slice(4)) + 1);
+
+    await generator.patch(`/api/projects/${res.body.project.id}`).send({ code: 'OTRO-001' }).expect(400);
+    await receiver.get('/api/projects/next-code').query({ areaId: physicsId }).expect(403);
+  });
+
+  it('no crea un proyecto con la vigencia ya terminada, pero sí uno que empezó antes', async () => {
+    const base = { name: 'Vigencia', areaId: physicsId, scope: 'INTERNAL' };
+    const ended = await generator.post('/api/projects').send({ ...base, startDate: '2020-01-01', endDate: '2020-12-31' }).expect(400);
+    expect(ended.body.error.code).toBe('PROJECT_ALREADY_ENDED');
+
+    await generator.post('/api/projects').send({ ...base, startDate: '2020-01-01', endDate: '2030-12-31' }).expect(201);
+  });
+
+  it('un proyecto no se borra ni con SQL directo', async () => {
+    const projectId = await createProject('TST-BORRAR');
+    await expect(prisma.project.delete({ where: { id: projectId } })).rejects.toThrow();
   });
 });
 

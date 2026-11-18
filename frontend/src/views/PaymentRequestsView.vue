@@ -201,6 +201,22 @@ async function run(action: () => Promise<PaymentRequestDetail>) {
   }
 }
 
+// Enviar cierra el trabajo del Generador sobre la solicitud: se vuelve a la lista con un aviso.
+const listNotice = ref('');
+
+async function submitRequest() {
+  const id = detail.value!.id;
+  await run(() => submitPaymentRequest(id));
+  if (detailError.value) return;
+  listNotice.value = `Solicitud #${id} enviada. Queda a la espera de que el Receptor la apruebe o la rechace.`;
+  await router.push({ name: 'payment-requests', query: listQuery.value });
+}
+
+// El aviso se borra al abrir otra solicitud o crear una.
+watch(detailId, (id) => {
+  if (id !== null) listNotice.value = '';
+});
+
 // Total que se va a entregar con los montos escritos en la tabla.
 const paymentTotal = computed(() =>
   Object.values(paymentForm.amounts).reduce((sum, text) => sum + (text.trim() ? (parseUsd(text) ?? 0) : 0), 0),
@@ -503,7 +519,7 @@ onMounted(async () => {
             type="button"
             class="button button-primary"
             :disabled="busy"
-            @click="run(() => submitPaymentRequest(detail!.id))"
+            @click="submitRequest"
           >
             <AppIcon name="send" :size="16" /> Enviar
           </button>
@@ -724,6 +740,7 @@ onMounted(async () => {
       Creación → envío → aprobación o rechazo → entrega de fondos → cierre. Los pagos pueden ser parciales y se aplican
       primero a la deuda más antigua.
     </p>
+    <p v-if="listNotice" class="notice notice-success section-gap" role="status">{{ listNotice }}</p>
 
     <div class="filter-bar">
       <div class="chips" role="group" aria-label="Estado">
@@ -744,7 +761,7 @@ onMounted(async () => {
         Proyecto
         <select v-model.number="filters.projectId">
           <option :value="0">Todos</option>
-          <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }}</option>
+          <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }} · {{ project.name }}</option>
         </select>
       </label>
     </div>
