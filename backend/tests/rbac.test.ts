@@ -59,6 +59,19 @@ describe('autorización por permisos', () => {
     expect(JSON.stringify(users.body)).not.toContain('passwordHash');
     expect(roles.body.roles).toHaveLength(3);
   });
+
+  it('la matriz de permisos no se puede modificar desde la API', async () => {
+    const admin = await loginAs('admin@example.com');
+    const adminRole = await roleId(ROLE_CODES.ADMIN);
+
+    await admin
+      .put(`/api/roles/${adminRole}/permissions`)
+      .send({ permissionCodes: [...ROLES.ADMIN.permissions, PERMISSIONS.PAYMENTS_REGISTER] })
+      .expect(404);
+
+    const links = await prisma.rolePermission.findMany({ where: { roleId: adminRole }, include: { permission: true } });
+    expect(links.map((link) => link.permission.code)).not.toContain(PERMISSIONS.PAYMENTS_REGISTER);
+  });
 });
 
 describe('gestión de usuarios', () => {
@@ -115,6 +128,21 @@ describe('gestión de usuarios', () => {
       .patch(`/api/users/${body.user.id}`)
       .send({ roleId: await roleId(ROLE_CODES.PAYROLL_RECEIVER) })
       .expect(409);
+  });
+
+  it('guardar un usuario sin cambios no deja un registro vacío en la auditoría', async () => {
+    const admin = await loginAs('admin@example.com');
+    const { body } = await admin.get('/api/auth/me').expect(200);
+    const { user } = body;
+    const countAudit = () => prisma.auditLog.count({ where: { entity: 'User', entityId: String(user.id) } });
+
+    const before = await countAudit();
+    await admin.patch(`/api/users/${user.id}`).send({ name: user.name, email: user.email }).expect(200);
+    expect(await countAudit()).toBe(before);
+
+    await admin.patch(`/api/users/${user.id}`).send({ name: `${user.name} (editado)` }).expect(200);
+    expect(await countAudit()).toBe(before + 1);
+    await admin.patch(`/api/users/${user.id}`).send({ name: user.name }).expect(200);
   });
 
   it('valida los datos y rechaza emails duplicados o roles inexistentes', async () => {

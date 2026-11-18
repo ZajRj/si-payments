@@ -25,11 +25,3 @@ export async function listRolesAndPermissions() {
     permissions: data.permissions ?? [],
   };
 }
-
-export async function updateRolePermissions(roleId: number, permissionCodes: string[]) {
-  const { role } = await http<{ role: Role }>(`/roles/${roleId}/permissions`, {
-    method: 'PUT',
-    body: { permissionCodes },
-  });
-  return role;
-}
