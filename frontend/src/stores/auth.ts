@@ -23,6 +23,18 @@ export const useAuthStore = defineStore('auth', () => {
     loaded = true;
   }
 
+  // Vuelve a preguntar al servidor: la sesión pudo cerrarse o cambiar de usuario en otra pestaña.
+  async function revalidate() {
+    const previousId = user.value?.id ?? null;
+    try {
+      user.value = await authApi.fetchCurrentUser();
+    } catch {
+      user.value = null;
+    }
+    loaded = true;
+    return user.value?.id === previousId;
+  }
+
   async function login(email: string, password: string) {
     user.value = await authApi.login(email, password);
     loaded = true;
@@ -38,5 +50,5 @@ export const useAuthStore = defineStore('auth', () => {
     loaded = true;
   }
 
-  return { user, isAuthenticated, can, ensureLoaded, login, logout, clear };
+  return { user, isAuthenticated, can, ensureLoaded, revalidate, login, logout, clear };
 });

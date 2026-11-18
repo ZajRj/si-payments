@@ -14,13 +14,22 @@ const password = ref('');
 const error = ref('');
 const submitting = ref(false);
 
+// El ?redirect= puede venir de la sesión de otro usuario: solo se respeta si quien entra puede ver esa página.
+function redirectTarget() {
+  const redirect = route.query.redirect;
+  if (typeof redirect !== 'string' || !redirect.startsWith('/')) return { name: 'dashboard' };
+  const target = router.resolve(redirect);
+  const permission = target.meta.permission;
+  if (target.name === 'forbidden' || target.meta.public || (permission && !auth.can(permission))) return { name: 'dashboard' };
+  return target.fullPath;
+}
+
 async function submit() {
   error.value = '';
   submitting.value = true;
   try {
     await auth.login(email.value, password.value);
-    const redirect = route.query.redirect;
-    await router.push(typeof redirect === 'string' ? redirect : { name: 'dashboard' });
+    await router.push(redirectTarget());
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
