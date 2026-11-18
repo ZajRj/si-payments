@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { dateOnlySchema } from '../../lib/dates.js';
 import { amountCentsSchema } from '../../lib/money.js';
-import { idParamSchema } from '../../lib/validation.js';
+import { idParamSchema, reasonSchema } from '../../lib/validation.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { requirePermission } from '../../middleware/authorize.js';
 import { PERMISSIONS } from '../../rbac/permissions.js';
 import {
+  annulAssignment,
   changeAssignmentAmount,
   createAssignment,
   listAssignments,
@@ -30,6 +31,8 @@ const changeAmountSchema = z.object({
   effectiveDate: dateOnlySchema,
   amountCents: amountCentsSchema,
 });
+
+const annulSchema = z.object({ reason: reasonSchema });
 
 const optionalId = z.coerce.number().int().positive().optional();
 
@@ -57,6 +60,12 @@ assignmentsRouter.patch('/:id', requirePermission(PERMISSIONS.ASSIGNMENTS_MANAGE
   const id = idParamSchema.parse(req.params.id);
   const { endDate } = updateEndDateSchema.parse(req.body);
   res.json({ assignment: await updateAssignmentEndDate(req.user!.id, id, endDate) });
+});
+
+assignmentsRouter.post('/:id/annul', requirePermission(PERMISSIONS.ASSIGNMENTS_MANAGE), async (req, res) => {
+  const id = idParamSchema.parse(req.params.id);
+  const { reason } = annulSchema.parse(req.body);
+  res.json({ assignment: await annulAssignment(req.user!.id, id, reason) });
 });
 
 assignmentsRouter.post('/:id/amount-change', requirePermission(PERMISSIONS.ASSIGNMENTS_MANAGE), async (req, res) => {

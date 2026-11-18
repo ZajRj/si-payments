@@ -36,8 +36,17 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   const user = await prisma.user.findUnique({ where: { email }, include: authUserInclude });
   const passwordMatches = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
 
-  if (!user || !user.active || user.deleteDate || !passwordMatches) {
+  // Cuenta inexistente, eliminada o contraseña incorrecta: el mismo mensaje, para no revelar qué correos existen.
+  if (!user || user.deleteDate || !passwordMatches) {
     throw new HttpError(401, 'INVALID_CREDENTIALS', 'Credenciales inválidas');
+  }
+  // Solo quien conoce la contraseña se entera de que la cuenta está desactivada, y así sabe a quién acudir.
+  if (!user.active) {
+    throw new HttpError(
+      403,
+      'ACCOUNT_INACTIVE',
+      'Tu cuenta está desactivada. Pide al administrador del sistema que la reactive',
+    );
   }
 
   return toAuthUser(user);

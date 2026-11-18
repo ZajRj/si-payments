@@ -177,6 +177,8 @@ export async function generateAccruals(actorId: number, { periodId, projectId }:
 
     const assignments = await tx.assignment.findMany({
       where: {
+        // Una asignación anulada no se causa.
+        annulledAt: null,
         paymentGroupId: period.paymentGroupId,
         projectId,
         startDate: { lte: period.endDate },

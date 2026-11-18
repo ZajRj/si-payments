@@ -148,6 +148,7 @@ El Administrador no tiene `reports:read`: no participa en operaciones de dinero,
 
 - **Sesión:** el login entrega un JWT en una cookie `httpOnly` y `SameSite=Strict`.
 - **Revocación inmediata:** `authenticate` lee el usuario y sus permisos de la base de datos en cada petición, así que un cambio de rol o una desactivación aplican de inmediato.
+- **Cuenta desactivada:** quien la intenta usar con la contraseña correcta recibe "Tu cuenta está desactivada" (403) y no entra. Con una contraseña incorrecta, o si la cuenta no existe o fue eliminada, la respuesta es siempre "Credenciales inválidas" (401), para no revelar qué correos existen.
 - **Autorización:** `requirePermission` protege cada ruta del backend y responde 403 si falta el permiso.
 - **Interfaz:** el frontend oculta rutas y acciones según los permisos del usuario. Es solo una ayuda de navegación, porque quien autoriza es el backend.
 - **Protección contra bloqueo:** nadie puede cambiar su propio rol ni desactivarse, por lo que siempre queda al menos un administrador activo.
@@ -224,7 +225,8 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 - **Dentro de la vigencia:** una asignación debe empezar y terminar dentro de la vigencia de su proyecto. Por lo mismo, no se puede acortar la vigencia de un proyecto si deja asignaciones fuera. Si el cambio altera días ya causados, se rechaza antes por eso (ver Causación).
 - **Sin solapamientos:** una persona no puede tener dos asignaciones del mismo proyecto y grupo de pago con días en común, porque se le causaría dos veces el mismo período.
 - **El monto no se edita:** un cambio de monto (`POST /api/assignments/:id/amount-change`) cierra la asignación el día anterior y crea otra desde la fecha indicada, en una sola transacción. Así la causación sabe qué monto correspondía a cada día y queda el historial. De una asignación solo se puede cambiar la fecha de fin.
-- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. Áreas y proyectos tienen además un trigger que impide borrarlos con SQL directo. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
+- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. Áreas y proyectos tienen además un trigger que impide borrarlos con SQL directo.
+- **Anulación de asignaciones:** una asignación registrada por error se anula con motivo (`POST /api/assignments/:id/annul`); queda quién y cuándo, y no se borra. Si ya tiene causaciones vigentes, primero se anulan en Causación. Anulada, no se causa, no cuenta para solapamientos ni para desactivar personas, proyectos o grupos, y ya no se modifica (triggers `assignment_no_delete` y `assignment_annulled_is_final`). En la pantalla, la fecha de fin solo se puede cambiar en asignaciones en curso de proyectos en curso. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
 - **Límite conocido:** el control de solapamientos se hace en el servicio, no con una restricción de la base de datos. Con SQLite las escrituras se serializan, así que en la práctica no hay carreras.
 
 ## Causación
@@ -266,7 +268,9 @@ Pantalla **Cajas chicas**. El Receptor gestiona las cajas, abre y cierra los mes
 
 ## Reportes y PDFs
 
-Pantalla **Reportes**, para el Generador y el Receptor (permiso `reports:read`). Solo leen datos; no escriben en la base de datos.
+Pantalla **Reportes**, para el Generador y el Receptor (permiso `reports:read`). Solo leen datos; no escriben en la base de datos. El estado de cuenta de una persona y los saldos de un proyecto tienen su propia dirección (`/reportes/personas/:id`, `/reportes/proyectos/:id`): se pueden recargar, compartir y volver con Atrás.
+
+Cada proyecto tiene además una ficha (`/proyectos/:id`) con sus datos, saldos, asignaciones, saldo por persona, solicitudes de pago y cajas chicas.
 
 | Reporte | Endpoint | Qué responde |
 |---|---|---|

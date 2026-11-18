@@ -251,6 +251,39 @@ describe('asignaciones', () => {
     await generator.patch(`/api/assignments/${assignmentId}`).send({ endDate: '2026-01-15' }).expect(200);
   });
 
+  it('se anula con motivo, no se borra y deja de contar', async () => {
+    const projectId = await createProject('TST-ANU');
+    const personId = await createPerson('V-30888111');
+    const base = { personId, projectId, paymentGroupId: biweeklyId, amountCents: 10_000, startDate: '2026-12-01' };
+    const created = await generator.post('/api/assignments').send(base).expect(201);
+    const id = created.body.assignment.id;
+
+    await receiver.post(`/api/assignments/${id}/annul`).send({ reason: 'No le corresponde' }).expect(403);
+    await generator.post(`/api/assignments/${id}/annul`).send({ reason: '' }).expect(400);
+
+    const res = await generator.post(`/api/assignments/${id}/annul`).send({ reason: 'Registrada por error' }).expect(200);
+    expect(res.body.assignment).toMatchObject({ annulmentReason: 'Registrada por error', annulledBy: { name: 'Gabriel Coordinador' } });
+    expect(res.body.assignment.annulledAt).not.toBeNull();
+
+    // Anulada ya no se modifica ni se vuelve a anular.
+    await generator.post(`/api/assignments/${id}/annul`).send({ reason: 'Otra vez' }).expect(409);
+    await generator.patch(`/api/assignments/${id}`).send({ endDate: '2026-12-15' }).expect(409);
+    await generator.post(`/api/assignments/${id}/amount-change`).send({ effectiveDate: '2026-12-10', amountCents: 20_000 }).expect(409);
+
+    // No ocupa días: se puede registrar otra en su lugar, y no cuenta como vigente.
+    await generator.post('/api/assignments').send(base).expect(201);
+    const open = await generator.get('/api/assignments').query({ projectId, openOnly: 'true' }).expect(200);
+    expect(open.body.assignments.map((a: { id: number }) => a.id)).not.toContain(id);
+
+    // Queda en la auditoría.
+    const [update] = await auditEntries('Assignment', id);
+    expect(update).toMatchObject({ action: 'UPDATE', after: { annulmentReason: 'Registrada por error' } });
+
+    // Ni con SQL directo se borra o se modifica una vez anulada.
+    await expect(prisma.assignment.delete({ where: { id } })).rejects.toThrow();
+    await expect(prisma.assignment.update({ where: { id }, data: { annulledAt: null } })).rejects.toThrow();
+  });
+
   it('el seed carga datos de ejemplo coherentes', async () => {
     const res = await generator.get('/api/assignments').query({ openOnly: 'false' }).expect(200);
     const seeded = res.body.assignments.filter((a: { project: { code: string } }) => !a.project.code.startsWith('TST'));

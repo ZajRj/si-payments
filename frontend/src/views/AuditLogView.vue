@@ -10,6 +10,7 @@ import { listUsers, type User } from '@/api/users';
 import AppIcon from '@/components/AppIcon.vue';
 import PaginationBar from '@/components/PaginationBar.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+import { ACTION_TONES, ACTIONS, ENTITY_SINGULAR } from '@/lib/audit-labels';
 import { formatDateTime, formatIfDate, formatRange } from '@/lib/dates';
 import { formatUsd } from '@/lib/money';
 import { ACCRUAL_STATUS_TONES, REQUEST_STATUS_TONES, VOUCHER_STATUS_TONES, activeTone, type Tone } from '@/lib/status';
@@ -36,41 +37,11 @@ const ENTITIES: Record<string, string> = {
   PettyCashVoucher: 'Vales de caja chica',
 };
 
-const ENTITY_SINGULAR: Record<string, string> = {
-  User: 'Usuario',
-  Setting: 'Parámetro',
-  Area: 'Área',
-  PaymentGroup: 'Grupo de pago',
-  Period: 'Período',
-  Person: 'Persona',
-  Project: 'Proyecto',
-  Assignment: 'Asignación',
-  Accrual: 'Causación',
-  AccrualBatch: 'Lote de causación',
-  PaymentRequest: 'Solicitud de pago',
-  Payment: 'Pago',
-  PettyCashFund: 'Caja chica',
-  PettyCashPeriod: 'Mes de caja chica',
-  PettyCashVoucher: 'Vale de caja chica',
-};
-
 const SETTING_LABELS: Record<string, string> = {
   'company.name': 'Nombre de la empresa',
   'company.taxId': 'RIF',
   'company.address': 'Dirección',
   'receipts.footer': 'Pie de los recibos',
-};
-
-const ACTIONS: Record<AuditAction, string> = {
-  CREATE: 'Creación',
-  UPDATE: 'Modificación',
-  DELETE: 'Eliminación',
-};
-
-const ACTION_TONES: Record<AuditAction, Tone> = {
-  CREATE: 'success',
-  UPDATE: 'info',
-  DELETE: 'danger',
 };
 
 const FIELD_LABELS: Record<string, string> = {

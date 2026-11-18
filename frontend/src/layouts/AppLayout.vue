@@ -29,6 +29,11 @@ const paletteItems = computed(() =>
   navItems.value.map((item) => ({ path: item.path, label: item.meta.navLabel!, icon: item.meta.navIcon })),
 );
 
+// La sección también queda marcada en sus páginas de detalle (/proyectos/5, /reportes/personas/12).
+function isNavActive(path: string) {
+  return path !== '/' && route.path.startsWith(`${path}/`);
+}
+
 // Cuántos registros esperan una acción del usuario en cada sección.
 function pendingCount(name: unknown) {
   return pending.counts[String(name) as keyof typeof pending.counts] ?? 0;
@@ -107,7 +112,13 @@ async function logout() {
       <nav class="side-nav" aria-label="Principal">
         <div v-for="group in navGroups" :key="group.name" class="side-group">
           <p v-if="group.name" class="side-group-title">{{ group.name }}</p>
-          <RouterLink v-for="item in group.items" :key="item.path" :to="item.path" class="side-link">
+          <RouterLink
+            v-for="item in group.items"
+            :key="item.path"
+            :to="item.path"
+            class="side-link"
+            :class="{ 'is-active': isNavActive(item.path) }"
+          >
             <AppIcon v-if="item.meta.navIcon" :name="item.meta.navIcon" />
             <span class="side-link-label">{{ item.meta.navLabel }}</span>
             <span v-if="pendingCount(item.name)" class="side-count">

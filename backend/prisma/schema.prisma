@@ -27,6 +27,7 @@ model User {
 
   accrualBatches        AccrualBatch[]     @relation("AccrualBatchCreatedBy")
   annulledAccruals      Accrual[]          @relation("AccrualAnnulledBy")
+  annulledAssignments   Assignment[]       @relation("AssignmentAnnulledBy")
   createdRequests       PaymentRequest[]   @relation("PaymentRequestCreatedBy")
   decidedRequests       PaymentRequest[]   @relation("PaymentRequestDecidedBy")
   closedRequests        PaymentRequest[]   @relation("PaymentRequestClosedBy")
@@ -174,21 +175,27 @@ model Project {
 // El monto no se modifica: un cambio de monto cierra la asignación y abre otra,
 // para que la causación sepa qué monto correspondía a cada día.
 model Assignment {
-  id             Int          @id @default(autoincrement())
-  personId       Int
-  person         Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
-  projectId      Int
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  paymentGroupId Int
-  paymentGroup   PaymentGroup @relation(fields: [paymentGroupId], references: [id], onDelete: Restrict)
+  id              Int          @id @default(autoincrement())
+  personId        Int
+  person          Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  projectId       Int
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  paymentGroupId  Int
+  paymentGroup    PaymentGroup @relation(fields: [paymentGroupId], references: [id], onDelete: Restrict)
   // Monto en centavos de USD por cada período completo.
-  amountCents    Int
-  startDate      DateTime
+  amountCents     Int
+  startDate       DateTime
   // Si es null, la asignación dura hasta el fin de la vigencia del proyecto.
-  endDate        DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  accruals       Accrual[]
+  endDate         DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  // Una asignación no se borra: se anula, con usuario y motivo, y ya no cuenta para nada.
+  // Los triggers impiden borrarla y modificarla una vez anulada.
+  annulledAt      DateTime?
+  annulledById    Int?
+  annulledBy      User?        @relation("AssignmentAnnulledBy", fields: [annulledById], references: [id], onDelete: Restrict)
+  annulmentReason String?
+  accruals        Accrual[]
 
   @@index([personId])
   @@index([projectId])
