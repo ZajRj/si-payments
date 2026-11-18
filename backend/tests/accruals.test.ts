@@ -208,6 +208,23 @@ describe('anulaciones', () => {
     await generator.post(`/api/accruals/batches/${batchId}/annul`).send({ reason: 'Lote generado por error' }).expect(409);
   });
 
+  it('una asignación con causaciones vigentes no se anula; anuladas éstas, sí, y ya no se causa', async () => {
+    const project = await createProject('TST-CAU-ANU');
+    const dora = await createPerson('V-40100020', 'Dora Anulación');
+    const assignment = await createAssignment(dora, project, 15_000, '2026-01-01', '2026-01-31');
+    const created = await generator.post('/api/accruals/generate').send({ periodId: period('2026-01-01').id, projectId: project }).expect(201);
+
+    const blocked = await generator.post(`/api/assignments/${assignment}/annul`).send({ reason: 'Persona equivocada' }).expect(409);
+    expect(blocked.body.error.code).toBe('ASSIGNMENT_HAS_ACCRUALS');
+
+    await generator.post(`/api/accruals/batches/${created.body.batches[0].id}/annul`).send({ reason: 'Persona equivocada' }).expect(200);
+    await generator.post(`/api/assignments/${assignment}/annul`).send({ reason: 'Persona equivocada' }).expect(200);
+
+    // Anulada, la asignación ya no se causa en ningún período.
+    const res = await generator.post('/api/accruals/generate').send({ periodId: period('2026-01-16').id, projectId: project }).expect(409);
+    expect(res.body.error.code).toBe('NOTHING_TO_ACCRUE');
+  });
+
   it('queda registrada en la auditoría', async () => {
     const [accrual] = (await generator.get('/api/accruals').query({ projectId, status: 'ANNULLED' }).expect(200)).body.accruals;
     const entries = (await admin.get('/api/audit-log').query({ entity: 'Accrual', entityId: String(accrual.id) }).expect(200)).body

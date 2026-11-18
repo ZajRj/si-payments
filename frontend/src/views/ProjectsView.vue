@@ -287,13 +287,19 @@ onMounted(load);
           <th scope="col">Vigencia</th>
           <th scope="col">Asignaciones</th>
           <th scope="col">Estado</th>
-          <th v-if="canManage" scope="col"><span class="sr-only">Acciones</span></th>
+          <th scope="col"><span class="sr-only">Acciones</span></th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="project in filteredProjects" :key="project.id">
-          <td class="nowrap">{{ project.code }}</td>
-          <td>{{ project.name }}</td>
+          <td class="nowrap">
+            <RouterLink :to="{ name: 'project-detail', params: { projectId: project.id } }">{{ project.code }}</RouterLink>
+          </td>
+          <td>
+            <RouterLink :to="{ name: 'project-detail', params: { projectId: project.id } }" class="link-plain">
+              {{ project.name }}
+            </RouterLink>
+          </td>
           <td>{{ project.area.name }}</td>
           <td>{{ SCOPE_LABELS[project.scope] }}</td>
           <td class="nowrap">{{ formatRange(project.startDate, project.endDate) }}</td>
@@ -303,12 +309,15 @@ onMounted(load);
             </RouterLink>
           </td>
           <td><StatusBadge :label="project.active ? 'Activo' : 'Inactivo'" :tone="activeTone(project.active)" /></td>
-          <td v-if="canManage">
-            <button type="button" class="button" @click="openEdit(project)">Editar</button>
+          <td>
+            <div class="actions">
+              <RouterLink class="button" :to="{ name: 'project-detail', params: { projectId: project.id } }">Ver</RouterLink>
+              <button v-if="canManage" type="button" class="button" @click="openEdit(project)">Editar</button>
+            </div>
           </td>
         </tr>
         <tr v-if="filteredProjects.length === 0">
-          <td :colspan="canManage ? 8 : 7">
+          <td colspan="8">
             {{ projects.length === 0 ? 'Todavía no hay proyectos.' : 'No hay proyectos con esos filtros.' }}
           </td>
         </tr>

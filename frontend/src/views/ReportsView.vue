@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { listAreas, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
 import { listProjects, type Project } from '@/api/projects';
@@ -28,6 +29,9 @@ const PRESETS: { value: Preset; label: string }[] = [
   { value: 'year', label: 'Este año' },
   { value: 'custom', label: 'Personalizado' },
 ];
+
+const route = useRoute();
+const router = useRouter();
 
 const lens = ref<Lens>('balances');
 const groupBy = ref<GroupBy>('person');
@@ -136,27 +140,68 @@ function refresh() {
   void loadStatement();
 }
 
+// La persona o el proyecto elegidos viven en la dirección (/reportes/personas/12, /reportes/proyectos/3):
+// se puede recargar, compartir el enlace o volver con Atrás.
 function selectRow(row: BalanceRow) {
   if (row.person) {
-    selectedPersonId.value = row.person.id;
-    statement.value = null;
-    void loadStatement();
+    void router.push({ name: 'report-person', params: { personId: row.person.id } });
   } else if (row.project) {
     // Un proyecto se explora bajando a sus personas.
-    filters.projectId = row.project.id;
-    groupBy.value = 'person';
+    void router.push({ name: 'report-project', params: { projectId: row.project.id } });
   }
 }
 
+// Vuelve a la vista sin persona: al proyecto filtrado, si lo hay, o a todos.
 function closeStatement() {
+  void router.push(
+    filters.projectId ? { name: 'report-project', params: { projectId: filters.projectId } } : { name: 'reports' },
+  );
+}
+
+function resetStatement() {
   selectedPersonId.value = null;
   statement.value = null;
   statementSeq++;
 }
 
+function applyRoute() {
+  const personId = Number(route.params.personId);
+  const projectId = Number(route.params.projectId);
+  if (route.name === 'report-person' && personId) {
+    groupBy.value = 'person';
+    if (selectedPersonId.value !== personId) {
+      selectedPersonId.value = personId;
+      statement.value = null;
+      void loadStatement();
+    }
+    return;
+  }
+  resetStatement();
+  if (route.name === 'report-project' && projectId) {
+    groupBy.value = 'person';
+    filters.projectId = projectId;
+  } else if (route.name === 'reports' && filters.projectId) {
+    filters.projectId = 0;
+  }
+}
+
+watch(() => route.fullPath, applyRoute);
+
+// Elegir o quitar un proyecto en el filtro también cambia la dirección.
+watch(
+  () => filters.projectId,
+  (projectId) => {
+    if (route.name === 'report-person') return;
+    const current = Number(route.params.projectId) || 0;
+    if (projectId === current) return;
+    void router.replace(projectId ? { name: 'report-project', params: { projectId } } : { name: 'reports' });
+  },
+);
+
 watch(() => [filters.projectId, filters.areaId, filters.from, filters.to], refresh);
-watch(groupBy, () => {
-  closeStatement();
+watch(groupBy, (value) => {
+  // Agrupar por proyecto deja de mirar una persona o un proyecto en particular.
+  if (value === 'project' && route.name !== 'reports') void router.push({ name: 'reports' });
   void loadBalances();
 });
 watch(lens, (value) => {
@@ -169,6 +214,7 @@ onMounted(async () => {
   } catch (e) {
     error.value = errorMessage(e);
   }
+  applyRoute();
   await loadBalances();
 });
 

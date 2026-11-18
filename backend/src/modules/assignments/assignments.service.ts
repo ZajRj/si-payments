@@ -26,11 +26,12 @@ const assignmentInclude = {
   person: { select: { id: true, idNumber: true, name: true } },
   project: { select: { id: true, code: true, name: true, endDate: true } },
   paymentGroup: { select: { id: true, name: true, frequency: true } },
+  annulledBy: { select: { id: true, name: true } },
 } satisfies Prisma.AssignmentInclude;
 
 type AssignmentRecord = Prisma.AssignmentGetPayload<{ include: typeof assignmentInclude }>;
 
-function toAssignmentDto({ startDate, endDate, project, ...assignment }: AssignmentRecord) {
+function toAssignmentDto({ startDate, endDate, project, annulledById: _annulledById, ...assignment }: AssignmentRecord) {
   return {
     ...assignment,
     project: { id: project.id, code: project.code, name: project.name, endDate: formatDateOnly(project.endDate) },
@@ -162,10 +163,56 @@ export async function changeAssignmentAmount(
   });
 }
 
-async function findAssignmentOrThrow(tx: Prisma.TransactionClient, id: number) {
+// Anula una asignación: no se borra (queda para la auditoría), pero deja de contar para la causación,
+// los solapamientos y las desactivaciones. Si ya se le causó algo, primero hay que anular esas causaciones.
+export async function annulAssignment(actorId: number, id: number, reason: string) {
+  return prisma.$transaction(async (tx) => {
+    const current = await findAssignmentOrThrow(tx, id, { allowAnnulled: true });
+    if (current.annulledAt) {
+      throw new HttpError(409, 'ASSIGNMENT_ALREADY_ANNULLED', 'La asignación ya está anulada');
+    }
+
+    const accruals = await tx.accrual.findMany({
+      where: { assignmentId: id, annulledAt: null },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    if (accruals.length > 0) {
+      const ids = accruals.map((accrual) => `#${accrual.id}`).join(', ');
+      throw new HttpError(
+        409,
+        'ASSIGNMENT_HAS_ACCRUALS',
+        `La asignación tiene causaciones vigentes (${ids}). Anúlalas en Causación antes de anular la asignación`,
+      );
+    }
+
+    const assignment = toAssignmentDto(
+      await tx.assignment.update({
+        where: { id },
+        data: { annulledAt: new Date(), annulledById: actorId, annulmentReason: reason },
+        include: assignmentInclude,
+      }),
+    );
+    await audit(tx, {
+      userId: actorId,
+      action: 'UPDATE',
+      entity: 'Assignment',
+      entityId: id,
+      before: toAssignmentDto(current),
+      after: assignment,
+    });
+    return assignment;
+  });
+}
+
+async function findAssignmentOrThrow(tx: Prisma.TransactionClient, id: number, { allowAnnulled = false } = {}) {
   const assignment = await tx.assignment.findUnique({ where: { id }, include: assignmentInclude });
   if (!assignment) {
     throw new HttpError(404, 'ASSIGNMENT_NOT_FOUND', 'Asignación no encontrada');
+  }
+  // Una asignación anulada ya no se modifica (lo refuerza el trigger assignment_annulled_is_final).
+  if (assignment.annulledAt && !allowAnnulled) {
+    throw new HttpError(409, 'ASSIGNMENT_ANNULLED', 'La asignación está anulada y ya no se modifica');
   }
   return assignment;
 }
@@ -220,6 +267,8 @@ async function assertNoOverlap(
       projectId,
       paymentGroupId,
       id: excludeId === undefined ? undefined : { not: excludeId },
+      // Una asignación anulada no ocupa días: se puede registrar otra en su lugar.
+      annulledAt: null,
       startDate: { lte: endDate },
       OR: [{ endDate: null }, { endDate: { gte: startDate } }],
     },

@@ -37,7 +37,8 @@ export async function listProjects({ areaId, active }: ListFilters) {
   const projects = await prisma.project.findMany({
     where: { areaId, active },
     orderBy: { code: 'asc' },
-    include: { ...projectInclude, _count: { select: { assignments: true } } },
+    // Las asignaciones anuladas no cuentan.
+    include: { ...projectInclude, _count: { select: { assignments: { where: { annulledAt: null } } } } },
   });
   return projects.map(({ _count, ...project }) => ({
     ...toProjectDto(project),
@@ -89,7 +90,7 @@ export async function updateProject(actorId: number, id: number, data: UpdatePro
 
       // Las asignaciones sin fecha de fin terminan con el proyecto: mover su fin no puede alterar períodos causados.
       if (endDate.getTime() !== current.endDate.getTime()) {
-        const followProject = await tx.assignment.findMany({ where: { projectId: id, endDate: null } });
+        const followProject = await tx.assignment.findMany({ where: { projectId: id, endDate: null, annulledAt: null } });
         for (const assignment of followProject) {
           await assertAccrualsUnaffected(tx, assignment, endDate);
         }
@@ -170,6 +171,7 @@ async function assertAssignmentsFit(tx: Prisma.TransactionClient, projectId: num
   const outside = await tx.assignment.count({
     where: {
       projectId,
+      annulledAt: null,
       OR: [{ startDate: { lt: startDate } }, { startDate: { gt: endDate } }, { endDate: { gt: endDate } }],
     },
   });

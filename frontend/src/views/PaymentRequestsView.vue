@@ -743,20 +743,14 @@ onMounted(async () => {
     <p v-if="listNotice" class="notice notice-success section-gap" role="status">{{ listNotice }}</p>
 
     <div class="filter-bar">
-      <div class="chips" role="group" aria-label="Estado">
-        <button
-          v-for="key in filterKeys"
-          :key="key"
-          type="button"
-          class="chip"
-          :class="{ 'chip-mine': key === 'mine' }"
-          :aria-pressed="statusFilter === key"
-          @click="setStatusFilter(key)"
-        >
-          {{ STATUS_FILTERS[key].label }}
-          <span class="chip-count">{{ filterCount(key) }}</span>
-        </button>
-      </div>
+      <label class="field">
+        Estado
+        <select :value="statusFilter" @change="setStatusFilter(($event.target as HTMLSelectElement).value)">
+          <option v-for="key in filterKeys" :key="key" :value="key">
+            {{ STATUS_FILTERS[key].label }} ({{ filterCount(key) }})
+          </option>
+        </select>
+      </label>
       <label class="field">
         Proyecto
         <select v-model.number="filters.projectId">
