@@ -22,6 +22,19 @@ describe('autenticación', () => {
     await request(app).get('/api/auth/me').set('Cookie', 'session=token.falso.123').expect(401);
   });
 
+  it('bloquea una cuenta tras 10 intentos fallidos aunque cambie la IP', async () => {
+    const attempt = (i: number) =>
+      request(app)
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', `10.1.0.${i}`)
+        .send({ email: 'objetivo@example.com', password: `intento-${i}` });
+    for (let i = 0; i < 10; i++) await attempt(i).expect(401);
+    const res = await attempt(99).expect(429);
+    expect(res.body.error.code).toBe('TOO_MANY_ATTEMPTS');
+    // Otras cuentas no quedan afectadas.
+    await request(app).post('/api/auth/login').send({ email: 'otra@example.com', password: 'incorrecta' }).expect(401);
+  });
+
   it('entrega una cookie httpOnly y devuelve los permisos del rol sin el hash', async () => {
     const res = await request(app)
       .post('/api/auth/login')

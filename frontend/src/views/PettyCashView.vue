@@ -37,6 +37,8 @@ const auth = useAuthStore();
 const pending = usePendingStore();
 const canManage = computed(() => auth.can(PERMISSIONS.PETTY_CASH_MANAGE));
 const canRequest = computed(() => auth.can(PERMISSIONS.PETTY_CASH_REQUEST));
+// Cancelar y rendir son solo de quien pidió el vale.
+const isOwnVoucher = (voucher: Voucher) => canRequest.value && voucher.requestedBy?.id === auth.user?.id;
 
 const funds = ref<PettyCashFund[]>([]);
 const projects = ref<Project[]>([]);
@@ -557,7 +559,7 @@ onMounted(async () => {
                   <button v-if="canManage" type="button" class="button button-primary" :disabled="busy" @click="voucherConfirm = { kind: 'approve', voucher }">
                     Aprobar
                   </button>
-                  <button v-if="canRequest" type="button" class="button button-danger" :disabled="busy" @click="voucherConfirm = { kind: 'cancel', voucher }">
+                  <button v-if="isOwnVoucher(voucher)" type="button" class="button button-danger" :disabled="busy" @click="voucherConfirm = { kind: 'cancel', voucher }">
                     Cancelar
                   </button>
                 </template>
@@ -571,7 +573,7 @@ onMounted(async () => {
                   Desembolsar
                 </button>
                 <button
-                  v-if="voucher.status === 'DISBURSED' && canRequest"
+                  v-if="voucher.status === 'DISBURSED' && isOwnVoucher(voucher)"
                   type="button"
                   class="button button-primary"
                   @click="openVoucherAction('settle', voucher)"

@@ -47,7 +47,11 @@ export const usePendingStore = defineStore('pending', () => {
     ]);
     if (current !== seq) return;
     requests.value = list;
-    vouchers.value = pendingVouchers.sort((a, b) => b.id - a.id);
+    // Quien solicita solo tiene pendientes sus propios vales por rendir.
+    const own = auth.can(PERMISSIONS.PETTY_CASH_MANAGE)
+      ? pendingVouchers
+      : pendingVouchers.filter((voucher) => voucher.requestedBy?.id === auth.user?.id);
+    vouchers.value = own.sort((a, b) => b.id - a.id);
   }
 
   function clear() {

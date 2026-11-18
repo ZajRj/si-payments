@@ -8,11 +8,12 @@ services:
       DATABASE_URL: file:/data/app.db
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env (ver .env.example)}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     volumes:
       - backend-data:/data
-    ports:
-      - "${BACKEND_PORT:-3003}:3000"
+    # Sin puerto publicado: solo el nginx del frontend llega al backend, por la red de Docker.
+    # Publicarlo permitiría saltarse nginx (sin HTTPS y falseando X-Forwarded-For).
     healthcheck:
       test:
         - CMD
