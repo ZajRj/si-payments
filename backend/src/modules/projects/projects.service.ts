@@ -1,6 +1,6 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
-import { formatDateOnly, businessToday } from '../../lib/dates.js';
+import { businessToday, displayDate, formatDateOnly } from '../../lib/dates.js';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { isUniqueViolation } from '../../lib/prisma-errors.js';
@@ -11,7 +11,8 @@ export const SCOPES = ['INTERNAL', 'EXTERNAL'] as const;
 export type Scope = (typeof SCOPES)[number];
 
 type ProjectInput = {
-  code: string;
+  // Sin código, se genera a partir del área (FIS-001, FIS-002…). La interfaz nunca lo envía.
+  code?: string;
   name: string;
   areaId: number;
   scope: Scope;
@@ -19,7 +20,8 @@ type ProjectInput = {
   endDate: Date;
 };
 
-type UpdateProjectInput = Partial<ProjectInput> & { active?: boolean };
+// El código no cambia después de creado: identifica al proyecto en solicitudes, recibos y reportes.
+type UpdateProjectInput = Partial<Omit<ProjectInput, 'code'>> & { active?: boolean };
 type ListFilters = { areaId?: number; active?: boolean };
 
 type ProjectRecord = Prisma.ProjectGetPayload<{ include: { area: { select: { id: true; name: true } } } }>;
@@ -44,11 +46,21 @@ export async function listProjects({ areaId, active }: ListFilters) {
 
 export async function createProject(actorId: number, data: ProjectInput) {
   assertValidRange(data.startDate, data.endDate);
+  // Un proyecto nuevo puede empezar en el pasado (registro retroactivo o migración desde Excel),
+  // pero no puede tener la vigencia ya terminada.
+  if (data.endDate.getTime() < businessToday().getTime()) {
+    throw new HttpError(
+      400,
+      'PROJECT_ALREADY_ENDED',
+      `La vigencia ya terminó: la fecha de fin debe ser ${displayDate(businessToday())} o posterior`,
+    );
+  }
 
   try {
     return await prisma.$transaction(async (tx) => {
-      await assertAreaUsable(tx, data.areaId);
-      const project = toProjectDto(await tx.project.create({ data, include: projectInclude }));
+      const area = await assertAreaUsable(tx, data.areaId);
+      const code = data.code ?? (await nextCode(tx, area.name));
+      const project = toProjectDto(await tx.project.create({ data: { ...data, code }, include: projectInclude }));
       await audit(tx, { userId: actorId, action: 'CREATE', entity: 'Project', entityId: project.id, after: project });
       return project;
     });
@@ -123,6 +135,32 @@ async function assertAreaUsable(tx: Prisma.TransactionClient, areaId: number) {
   if (!area.active) {
     throw new HttpError(409, 'AREA_INACTIVE', 'El área indicada está inactiva');
   }
+  return area;
+}
+
+// Prefijo del código: las tres primeras letras del área, sin acentos (Física → FIS, Química → QUI).
+export function areaPrefix(areaName: string) {
+  const letters = areaName
+    .normalize('NFD')
+    .replace(/[^A-Za-z]/g, '')
+    .toUpperCase();
+  return letters.padEnd(3, 'X').slice(0, 3);
+}
+
+// Siguiente código libre del prefijo: FIS-001, FIS-002… Si dos áreas comparten prefijo, comparten la numeración.
+async function nextCode(tx: Prisma.TransactionClient, areaName: string) {
+  const prefix = areaPrefix(areaName);
+  const taken = await tx.project.findMany({ where: { code: { startsWith: `${prefix}-` } }, select: { code: true } });
+  const last = taken.reduce((max, { code }) => {
+    const match = /^[A-Z]{3}-(\d+)$/.exec(code);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `${prefix}-${String(last + 1).padStart(3, '0')}`;
+}
+
+// Vista previa del código que recibirá un proyecto nuevo del área. El definitivo se asigna al guardar.
+export async function previewNextCode(areaId: number) {
+  return prisma.$transaction(async (tx) => nextCode(tx, (await assertAreaUsable(tx, areaId)).name));
 }
 
 // Cambiar la vigencia no puede dejar asignaciones fuera de ella.

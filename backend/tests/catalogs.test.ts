@@ -17,30 +17,50 @@ describe('áreas', () => {
       const res = await agent.get('/api/areas').expect(200);
       expect(res.body.areas.map((area: { name: string }) => area.name)).toContain('Física');
 
-      await agent.post('/api/areas').send({ name: 'No permitida' }).expect(403);
+      await agent.post('/api/areas').send({ name: 'No permitida', description: 'Área que no se debería crear' }).expect(403);
       await agent.patch('/api/areas/1').send({ active: false }).expect(403);
     }
   });
 
   it('el administrador crea y desactiva un área, y cada cambio queda auditado', async () => {
     const admin = await loginAs('admin@example.com');
-    const created = await admin.post('/api/areas').send({ name: 'Geología' }).expect(201);
+    const description = 'Proyectos de suelos, rocas y estudios del subsuelo';
+    const created = await admin.post('/api/areas').send({ name: 'Geología', description }).expect(201);
     const id = created.body.area.id;
+    expect(created.body.area).toMatchObject({ name: 'Geología', description });
 
-    await admin.post('/api/areas').send({ name: 'Geología' }).expect(409);
+    await admin.post('/api/areas').send({ name: 'Geología', description }).expect(409);
     // Tampoco con otra capitalización o sin acentos.
-    await admin.post('/api/areas').send({ name: 'geologia' }).expect(409);
-    await admin.post('/api/areas').send({ name: 'FÍSICA' }).expect(409);
+    await admin.post('/api/areas').send({ name: 'geologia', description }).expect(409);
+    await admin.post('/api/areas').send({ name: 'FÍSICA', description }).expect(409);
     await admin.patch(`/api/areas/${id}`).send({ active: false }).expect(200);
 
     const [update, create] = await auditEntries(admin, 'Area', id);
-    expect(create).toMatchObject({ action: 'CREATE', after: { name: 'Geología', active: true } });
+    expect(create).toMatchObject({ action: 'CREATE', after: { name: 'Geología', description, active: true } });
     expect(update).toMatchObject({
       action: 'UPDATE',
       before: { active: true },
       after: { active: false },
       user: { email: 'admin@example.com' },
     });
+  });
+
+  it('exige una descripción que diga qué proyectos van en el área', async () => {
+    const admin = await loginAs('admin@example.com');
+    await admin.post('/api/areas').send({ name: 'Astronomía' }).expect(400);
+    await admin.post('/api/areas').send({ name: 'Astronomía', description: 'corta' }).expect(400);
+
+    const res = await admin.get('/api/areas').expect(200);
+    const physics = res.body.areas.find((area: { name: string }) => area.name === 'Física');
+    expect(physics.description).not.toBe('');
+  });
+
+  it('un área no se borra ni con SQL directo', async () => {
+    const area = await prisma.area.findFirstOrThrow({ where: { name: 'Física' } });
+    await expect(prisma.area.delete({ where: { id: area.id } })).rejects.toThrow();
+    // Ni siquiera una sin proyectos.
+    const empty = await prisma.area.create({ data: { name: 'Área sin proyectos', description: 'Solo para la prueba' } });
+    await expect(prisma.area.delete({ where: { id: empty.id } })).rejects.toThrow();
   });
 });
 
