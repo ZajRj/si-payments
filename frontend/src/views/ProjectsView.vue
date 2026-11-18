@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { listAreas, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
 import {
   createProject,
   listProjects,
-  nextProjectCode,
   SCOPE_LABELS,
   updateProject,
   type Project,
@@ -90,20 +89,10 @@ const form = reactive({
 const areaOptions = computed(() => areas.value.filter((area) => area.active || area.id === form.areaId));
 const selectedArea = computed(() => areas.value.find((area) => area.id === form.areaId));
 
-// Vista previa del código del proyecto nuevo: cambia al elegir el área.
-const codePreview = ref('');
-watch(
-  () => [formOpen.value, form.areaId] as const,
-  async ([open, areaId]) => {
-    codePreview.value = '';
-    if (!open || editingId.value !== null || !areaId) return;
-    try {
-      codePreview.value = await nextProjectCode(areaId);
-    } catch {
-      codePreview.value = '';
-    }
-  },
-);
+// Prefijo que usará el código (lo genera el servidor): tres letras del área sin acentos.
+function areaPrefix(name: string) {
+  return name.normalize('NFD').replace(/[^A-Za-z]/g, '').toUpperCase().padEnd(3, 'X').slice(0, 3);
+}
 
 // Un proyecto nuevo no puede tener la vigencia terminada: el fin es hoy o después.
 const minEndDate = computed(() => {
@@ -194,6 +183,10 @@ onMounted(load);
     @close="formOpen = false"
   >
     <form class="form-grid" @submit.prevent="save">
+      <label class="field field-wide">
+        Nombre
+        <input v-model="form.name" required maxlength="120" />
+      </label>
       <label class="field">
         Área
         <select v-model.number="form.areaId" required>
@@ -202,27 +195,17 @@ onMounted(load);
         </select>
       </label>
       <label class="field">
-        Código
-        <input
-          :value="editingId === null ? codePreview : editingCode"
-          disabled
-          :placeholder="editingId === null ? 'Elige el área' : ''"
-        />
-        <span class="hint">
-          {{ editingId === null ? 'Se genera a partir del área y se asigna al guardar.' : 'El código no cambia.' }}
-        </span>
-      </label>
-      <p v-if="selectedArea?.description" class="hint">{{ selectedArea.name }}: {{ selectedArea.description }}</p>
-      <label class="field field-wide">
-        Nombre
-        <input v-model="form.name" required maxlength="120" />
-      </label>
-      <label class="field">
         Ámbito
         <select v-model="form.scope">
           <option v-for="(label, value) in SCOPE_LABELS" :key="value" :value="value">{{ label }}</option>
         </select>
       </label>
+      <p v-if="selectedArea" class="hint">
+        {{ selectedArea.description }}
+        <template v-if="editingId === null">
+          El código se asigna al guardar: {{ areaPrefix(selectedArea.name) }}- y cuatro caracteres al azar.
+        </template>
+      </p>
       <label class="field">
         Inicio de la vigencia
         <input v-model="form.startDate" type="date" required />
@@ -248,9 +231,9 @@ onMounted(load);
   </AppModal>
 
   <form class="card form-grid section-gap" role="search" @submit.prevent>
-    <label class="field">
+    <label class="field field-wide">
       Buscar
-      <input v-model="filters.search" type="search" placeholder="Código o nombre" />
+      <input v-model="filters.search" type="search" placeholder="Código o nombre del proyecto" />
     </label>
     <label class="field">
       Área

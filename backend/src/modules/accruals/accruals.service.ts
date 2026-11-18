@@ -103,34 +103,55 @@ const batchInclude = {
   project: { select: { id: true, code: true, name: true } },
   period: { select: periodSelect },
   createdBy: { select: { id: true, name: true } },
-  accruals: { select: { amountCents: true, annulledAt: true } },
+  accruals: { select: { id: true, amountCents: true, annulledAt: true } },
 } satisfies Prisma.AccrualBatchInclude;
 
 type BatchRecord = Prisma.AccrualBatchGetPayload<{ include: typeof batchInclude }>;
 
-function toBatchDto({ accruals, period, createdById: _createdById, ...batch }: BatchRecord) {
+// `paid` trae lo pagado de cada causación. Sin él (al generar o anular un lote) se toma como cero.
+function toBatchDto({ accruals, period, createdById: _createdById, ...batch }: BatchRecord, paid = new Map<number, number>()) {
   const active = accruals.filter((accrual) => !accrual.annulledAt);
+  const totalCents = active.reduce((sum, accrual) => sum + accrual.amountCents, 0);
+  const paidCents = active.reduce((sum, accrual) => sum + (paid.get(accrual.id) ?? 0), 0);
   return {
     ...batch,
     period: toPeriodRefDto(period),
     accrualCount: accruals.length,
     activeCount: active.length,
-    totalCents: active.reduce((sum, accrual) => sum + accrual.amountCents, 0),
+    totalCents,
+    paidCents,
+    pendingCents: totalCents - paidCents,
   };
 }
 
-export async function listBatches({ projectId, periodId }: { projectId?: number; periodId?: number }, pagination: PaginationQuery) {
-  const where = { projectId, periodId };
+type BatchFilters = { projectId?: number; periodId?: number; paymentGroupId?: number; personId?: number };
+
+export async function listBatches({ projectId, periodId, paymentGroupId, personId }: BatchFilters, pagination: PaginationQuery) {
+  const where = {
+    projectId,
+    periodId,
+    period: paymentGroupId ? { paymentGroupId } : undefined,
+    // Con persona: los lotes donde se le causó algo.
+    accruals: personId ? { some: { personId } } : undefined,
+  } satisfies Prisma.AccrualBatchWhereInput;
   const [batches, total] = await Promise.all([
     prisma.accrualBatch.findMany({
       where,
       include: batchInclude,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ period: { startDate: 'desc' } }, { createdAt: 'desc' }, { id: 'desc' }],
       ...pageArgs(pagination),
     }),
     prisma.accrualBatch.count({ where }),
   ]);
-  const { items, ...meta } = pageResult(batches.map(toBatchDto), total, pagination);
+  const paid = await paidByAccrual(
+    prisma,
+    batches.flatMap((batch) => batch.accruals.map((accrual) => accrual.id)),
+  );
+  const { items, ...meta } = pageResult(
+    batches.map((batch) => toBatchDto(batch, paid)),
+    total,
+    pagination,
+  );
   return { batches: items, ...meta };
 }
 
@@ -209,7 +230,8 @@ export async function generateAccruals(actorId: number, { periodId, projectId }:
       include: batchInclude,
       orderBy: { id: 'asc' },
     });
-    return batches.map(toBatchDto);
+    // Recién generados: todavía no tienen pagos.
+    return batches.map((batch) => toBatchDto(batch));
   });
 }
 

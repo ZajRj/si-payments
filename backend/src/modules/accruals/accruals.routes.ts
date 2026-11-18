@@ -25,7 +25,12 @@ const listQuerySchema = paginationQuerySchema().extend({
   status: z.enum(ACCRUAL_STATUSES).optional(),
 });
 
-const batchesQuerySchema = paginationQuerySchema().extend({ projectId: optionalId, periodId: optionalId });
+const batchesQuerySchema = paginationQuerySchema().extend({
+  projectId: optionalId,
+  periodId: optionalId,
+  paymentGroupId: optionalId,
+  personId: optionalId,
+});
 
 const generateSchema = z.object({
   periodId: z.number().int().positive(),
