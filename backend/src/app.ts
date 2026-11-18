@@ -1,6 +1,7 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import helmet from 'helmet';
+import { env } from './config/env.js';
 import './lib/zod-es.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { accrualsRouter } from './modules/accruals/accruals.routes.js';
@@ -21,8 +22,8 @@ import { usersRouter } from './modules/users/users.routes.js';
 export function createApp() {
   const app = express();
 
-  // El backend solo es accesible a través del proxy nginx del frontend.
-  app.set('trust proxy', 1);
+  // El backend solo debe ser accesible a través de los proxies (ver TRUST_PROXY_HOPS).
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
   app.use(helmet());
   app.use(express.json({ limit: '100kb' }));

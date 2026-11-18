@@ -22,6 +22,19 @@ describe('autenticación', () => {
     await request(app).get('/api/auth/me').set('Cookie', 'session=token.falso.123').expect(401);
   });
 
+  it('bloquea una cuenta tras 10 intentos fallidos aunque cambie la IP', async () => {
+    const attempt = (i: number) =>
+      request(app)
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', `10.1.0.${i}`)
+        .send({ email: 'objetivo@example.com', password: `intento-${i}` });
+    for (let i = 0; i < 10; i++) await attempt(i).expect(401);
+    const res = await attempt(99).expect(429);
+    expect(res.body.error.code).toBe('TOO_MANY_ATTEMPTS');
+    // Otras cuentas no quedan afectadas.
+    await request(app).post('/api/auth/login').send({ email: 'otra@example.com', password: 'incorrecta' }).expect(401);
+  });
+
   it('entrega una cookie httpOnly y devuelve los permisos del rol sin el hash', async () => {
     const res = await request(app)
       .post('/api/auth/login')
@@ -30,6 +43,8 @@ describe('autenticación', () => {
 
     expect(res.headers['set-cookie']?.[0]).toMatch(/HttpOnly/);
     expect(res.headers['set-cookie']?.[0]).toMatch(/SameSite=Strict/);
+    // Cookie de sesión: el navegador la borra al cerrarse.
+    expect(res.headers['set-cookie']?.[0]).not.toMatch(/Max-Age|Expires/i);
     expect(res.body.user.permissions).toContain(PERMISSIONS.USERS_MANAGE);
     expect(JSON.stringify(res.body)).not.toContain('passwordHash');
   });
@@ -58,6 +73,19 @@ describe('autorización por permisos', () => {
     expect(users.body.users.length).toBeGreaterThanOrEqual(3);
     expect(JSON.stringify(users.body)).not.toContain('passwordHash');
     expect(roles.body.roles).toHaveLength(3);
+  });
+
+  it('la matriz de permisos no se puede modificar desde la API', async () => {
+    const admin = await loginAs('admin@example.com');
+    const adminRole = await roleId(ROLE_CODES.ADMIN);
+
+    await admin
+      .put(`/api/roles/${adminRole}/permissions`)
+      .send({ permissionCodes: [...ROLES.ADMIN.permissions, PERMISSIONS.PAYMENTS_REGISTER] })
+      .expect(404);
+
+    const links = await prisma.rolePermission.findMany({ where: { roleId: adminRole }, include: { permission: true } });
+    expect(links.map((link) => link.permission.code)).not.toContain(PERMISSIONS.PAYMENTS_REGISTER);
   });
 });
 
@@ -115,6 +143,21 @@ describe('gestión de usuarios', () => {
       .patch(`/api/users/${body.user.id}`)
       .send({ roleId: await roleId(ROLE_CODES.PAYROLL_RECEIVER) })
       .expect(409);
+  });
+
+  it('guardar un usuario sin cambios no deja un registro vacío en la auditoría', async () => {
+    const admin = await loginAs('admin@example.com');
+    const { body } = await admin.get('/api/auth/me').expect(200);
+    const { user } = body;
+    const countAudit = () => prisma.auditLog.count({ where: { entity: 'User', entityId: String(user.id) } });
+
+    const before = await countAudit();
+    await admin.patch(`/api/users/${user.id}`).send({ name: user.name, email: user.email }).expect(200);
+    expect(await countAudit()).toBe(before);
+
+    await admin.patch(`/api/users/${user.id}`).send({ name: `${user.name} (editado)` }).expect(200);
+    expect(await countAudit()).toBe(before + 1);
+    await admin.patch(`/api/users/${user.id}`).send({ name: user.name }).expect(200);
   });
 
   it('valida los datos y rechaza emails duplicados o roles inexistentes', async () => {

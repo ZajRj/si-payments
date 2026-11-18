@@ -27,16 +27,29 @@ const loginRateLimit = rateLimit({
   message: { error: { code: 'TOO_MANY_ATTEMPTS', message: 'Demasiados intentos. Inténtalo más tarde.' } },
 });
 
+// Además del límite por IP, uno por cuenta: la IP se puede falsear o compartir (proxy, NAT) y no basta
+// para frenar a quien prueba contraseñas contra un mismo usuario desde varias direcciones.
+const accountRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const email: unknown = req.body?.email;
+    return typeof email === 'string' ? email.trim().toLowerCase() : 'sin-email';
+  },
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: { code: 'TOO_MANY_ATTEMPTS', message: 'Demasiados intentos. Inténtalo más tarde.' } },
+});
+
 export const authRouter = Router();
 
-authRouter.post('/login', loginRateLimit, async (req, res) => {
+authRouter.post('/login', loginRateLimit, accountRateLimit, async (req, res) => {
   const { email, password } = loginSchema.parse(req.body);
   const user = await login(email, password);
 
-  res.cookie(SESSION_COOKIE, signSessionToken(user.id), {
-    ...cookieOptions,
-    maxAge: env.JWT_EXPIRES_IN_HOURS * 60 * 60 * 1000,
-  });
+  // Cookie de sesión (sin maxAge): se borra al cerrar el navegador. El token sigue venciendo a las JWT_EXPIRES_IN_HOURS.
+  res.cookie(SESSION_COOKIE, signSessionToken(user.id), cookieOptions);
   res.json({ user });
 });
 

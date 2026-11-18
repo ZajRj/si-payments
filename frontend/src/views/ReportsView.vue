@@ -183,11 +183,11 @@ const showDetail = computed(() => lens.value === 'balances' && groupBy.value ===
         <h1>Reportes</h1>
         <p class="rp-sub">Lo causado, lo pagado y lo que se adeuda, por persona, proyecto y fecha.</p>
       </div>
-      <div class="seg seg-lg" role="tablist" aria-label="Vista del reporte">
-        <button type="button" role="tab" :aria-selected="lens === 'balances'" :class="{ on: lens === 'balances' }" @click="lens = 'balances'">
+      <div class="seg seg-lg" role="group" aria-label="Vista del reporte">
+        <button type="button" :aria-pressed="lens === 'balances'" :class="{ on: lens === 'balances' }" @click="lens = 'balances'">
           Saldos
         </button>
-        <button type="button" role="tab" :aria-selected="lens === 'payments'" :class="{ on: lens === 'payments' }" @click="lens = 'payments'">
+        <button type="button" :aria-pressed="lens === 'payments'" :class="{ on: lens === 'payments' }" @click="lens = 'payments'">
           Libro de pagos
         </button>
       </div>
@@ -200,7 +200,6 @@ const showDetail = computed(() => lens.value === 'balances' && groupBy.value ===
           :key="item.value"
           type="button"
           class="chip"
-          :class="{ on: preset === item.value }"
           :aria-pressed="preset === item.value"
           @click="item.value === 'custom' ? (preset = 'custom') : applyPreset(item.value)"
         >
@@ -248,8 +247,8 @@ const showDetail = computed(() => lens.value === 'balances' && groupBy.value ===
     <template v-if="lens === 'balances'">
       <div class="subbar">
         <div class="seg" role="group" aria-label="Agrupar por">
-          <button type="button" :class="{ on: groupBy === 'person' }" @click="groupBy = 'person'">Por persona</button>
-          <button type="button" :class="{ on: groupBy === 'project' }" @click="groupBy = 'project'">Por proyecto</button>
+          <button type="button" :aria-pressed="groupBy === 'person'" :class="{ on: groupBy === 'person' }" @click="groupBy = 'person'">Por persona</button>
+          <button type="button" :aria-pressed="groupBy === 'project'" :class="{ on: groupBy === 'project' }" @click="groupBy = 'project'">Por proyecto</button>
         </div>
         <span class="hint-inline">
           {{ groupBy === 'person' ? 'Selecciona una persona para ver su estado de cuenta.' : 'Selecciona un proyecto para ver sus personas.' }}
@@ -335,31 +334,6 @@ const showDetail = computed(() => lens.value === 'balances' && groupBy.value ===
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-.chip {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.8rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: background var(--ease);
-}
-.chip:hover {
-  background: var(--surface-alt);
-}
-.chip.on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 650;
 }
 .filter-fields {
   display: flex;
