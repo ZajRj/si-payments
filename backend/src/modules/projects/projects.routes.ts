@@ -5,7 +5,7 @@ import { idParamSchema } from '../../lib/validation.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { requirePermission } from '../../middleware/authorize.js';
 import { PERMISSIONS } from '../../rbac/permissions.js';
-import { createProject, listProjects, previewNextCode, SCOPES, updateProject } from './projects.service.js';
+import { createProject, listProjects, SCOPES, updateProject } from './projects.service.js';
 
 const projectFieldsSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -15,7 +15,7 @@ const projectFieldsSchema = z.object({
   endDate: dateOnlySchema,
 });
 
-// El código es opcional: si no viene, se genera a partir del área. La interfaz siempre lo deja generar.
+// El código es opcional: si no viene, se genera al azar con el prefijo del área. La interfaz no lo envía.
 const createProjectSchema = projectFieldsSchema.extend({
   code: z
     .string()
@@ -27,9 +27,6 @@ const createProjectSchema = projectFieldsSchema.extend({
 
 // El código no se edita: identifica al proyecto en solicitudes, recibos y reportes.
 const updateProjectSchema = projectFieldsSchema.partial().extend({ active: z.boolean().optional() }).strict();
-
-const nextCodeQuerySchema = z.object({ areaId: z.coerce.number().int().positive() });
-
 const listQuerySchema = z.object({
   areaId: z.coerce.number().int().positive().optional(),
   active: z.stringbool().optional(),
@@ -41,11 +38,6 @@ projectsRouter.use(authenticate);
 
 projectsRouter.get('/', requirePermission(PERMISSIONS.PROJECTS_READ), async (req, res) => {
   res.json({ projects: await listProjects(listQuerySchema.parse(req.query)) });
-});
-
-projectsRouter.get('/next-code', requirePermission(PERMISSIONS.PROJECTS_MANAGE), async (req, res) => {
-  const { areaId } = nextCodeQuerySchema.parse(req.query);
-  res.json({ code: await previewNextCode(areaId) });
 });
 
 projectsRouter.post('/', requirePermission(PERMISSIONS.PROJECTS_MANAGE), async (req, res) => {

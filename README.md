@@ -214,7 +214,7 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 | Entidad | Qué es |
 |---|---|
 | Persona | Beneficiario que cobra, sin usuario en el sistema. La cédula se guarda como `V-12345678` o `E-12345678` y no se repite: `v12.345.678` o `V-012345678` se normalizan a la misma. Teléfono y email son opcionales; vacíos se guardan como `null`. |
-| Proyecto | Código, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). El código se genera a partir del área (`FIS-001`, `QUI-002`…: tres letras del área sin acentos y un correlativo) y no se edita. `GET /api/projects/next-code?areaId=` devuelve el siguiente como vista previa. |
+| Proyecto | Código, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). El código se genera al guardar: tres letras del área sin acentos y cuatro caracteres al azar (`BIO-7KQ3`), sin 0, O, 1, I ni L para que no se confundan al leerlo. No se edita. |
 | Asignación | Persona × proyecto × grupo de pago, con un monto en USD por cada período completo y fechas desde y hasta: los días en que la persona trabaja y gana la asignación. Los períodos del grupo son el calendario de corte y pago; si la persona trabaja solo una parte de un período, cobra en proporción (ver Causación). Sin fecha hasta, dura lo que dure el proyecto. |
 
 ### Reglas
@@ -233,6 +233,7 @@ Pantalla **Causación**. La genera el Generador de Nómina; el Receptor la consu
 
 - **Prorrateo:** monto causado = monto por período de la asignación × días activos ÷ días reales del período, redondeado al centavo (la mitad sube). Se calcula con enteros ([proration.ts](backend/src/modules/accruals/proration.ts)). Ejemplo: USD 450 por quincena con inicio el 6 de enero causa 10/15 de 450 = USD 300 en la primera quincena de enero.
 - **Por lote:** `POST /api/accruals/generate` con `periodId` y, opcionalmente, `projectId`. Crea un lote por proyecto con las asignaciones del grupo de pago del período que tengan días activos en él. Solo se causan períodos que ya cerraron (fecha de fin igual o anterior a hoy).
+- **Pantalla:** muestra los lotes (`GET /api/accruals/batches`, filtrable por proyecto, grupo de pago, período y persona) con lo causado, pagado y pendiente de cada uno. Al desplegar un lote se ven todas sus causaciones (`GET /api/accruals?batchId=`), y desde ahí se anula una causación o el lote completo.
 - **Sin duplicados:** una asignación tiene como máximo una causación vigente por período. Si se agrega una asignación retroactiva o se anula una causación, volver a generar crea un lote complementario solo con lo que falta.
 - **Protección de lo causado:** no se puede cambiar la fecha de fin de una asignación, hacer un cambio de monto ni mover el fin de un proyecto si eso altera los días de un período ya causado. Tampoco se puede eliminar un período con causaciones.
 - **Anulación:** una causación o un lote completo se anulan con motivo (`POST /api/accruals/:id/annul`, `POST /api/accruals/batches/:id/annul`). No se puede anular lo que tiene pagos vigentes o está en una solicitud abierta.
