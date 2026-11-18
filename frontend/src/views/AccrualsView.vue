@@ -9,8 +9,6 @@ import {
   listBatches,
   type Accrual,
   type AccrualBatch,
-  type AccrualTotals,
-  type AccrualStatusFilter,
 } from '@/api/accruals';
 import { errorMessage } from '@/api/http';
 import { listPaymentGroups, listPeriods, type PaymentGroup, type Period } from '@/api/payment-groups';
@@ -29,20 +27,21 @@ import { formatDateTime, formatRange } from '@/lib/dates';
 const auth = useAuthStore();
 const canGenerate = computed(() => auth.can(PERMISSIONS.ACCRUALS_GENERATE));
 
-const accruals = ref<Accrual[]>([]);
 const batches = ref<AccrualBatch[]>([]);
-const totals = ref<AccrualTotals>({ amountCents: 0, paidCents: 0, pendingCents: 0 });
-// Cada tabla se pagina por separado; el total de causaciones cubre todo lo filtrado, no solo la página.
-const accrualPaging = reactive({ page: 1, pageCount: 0, total: 0 });
-const batchPaging = reactive({ page: 1, pageCount: 0, total: 0 });
+const paging = reactive({ page: 1, pageCount: 0, total: 0 });
 const projects = ref<Project[]>([]);
 const people = ref<Person[]>([]);
 const groups = ref<PaymentGroup[]>([]);
 const loading = ref(true);
 const error = ref('');
 
-const filters = reactive({ projectId: 0, personId: 0, paymentGroupId: 0, periodId: 0, status: '' as '' | AccrualStatusFilter });
+const filters = reactive({ projectId: 0, paymentGroupId: 0, periodId: 0, personId: 0 });
 const filterPeriods = ref<Period[]>([]);
+const hasFilters = computed(() => Boolean(filters.projectId || filters.paymentGroupId || filters.periodId || filters.personId));
+
+function clearFilters() {
+  Object.assign(filters, { projectId: 0, paymentGroupId: 0, periodId: 0, personId: 0 });
+}
 
 // Fecha local en formato AAAA-MM-DD, para comparar con las fechas de la API.
 const today = new Date().toLocaleDateString('sv-SE');
@@ -51,66 +50,41 @@ async function periodsOf(groupId: number) {
   return groupId ? listPeriods(groupId) : [];
 }
 
+// Los períodos del filtro dependen del grupo elegido.
 watch(
   () => filters.paymentGroupId,
   async (groupId) => {
     filters.periodId = 0;
     try {
-      filterPeriods.value = await periodsOf(groupId);
+      filterPeriods.value = (await periodsOf(groupId)).slice().reverse();
     } catch (e) {
       error.value = errorMessage(e);
     }
   },
 );
 
-function filterArgs() {
-  return {
-    projectId: filters.projectId || undefined,
-    periodId: filters.periodId || undefined,
-  };
-}
-
-async function loadAccruals(page = accrualPaging.page, seq = loadSeq) {
-  const result = await listAccruals({
-    ...filterArgs(),
-    personId: filters.personId || undefined,
-    paymentGroupId: filters.paymentGroupId || undefined,
-    status: filters.status || undefined,
-    page,
-  });
-  if (seq !== loadSeq) return;
-  // Si anular dejó la página vacía, retrocede a la última que existe.
-  if (result.accruals.length === 0 && result.pageCount > 0 && page > result.pageCount) {
-    return loadAccruals(result.pageCount, seq);
-  }
-  accruals.value = result.accruals;
-  totals.value = result.totals;
-  Object.assign(accrualPaging, { page: result.page, pageCount: result.pageCount, total: result.total });
-}
-
-async function loadBatches(page = batchPaging.page, seq = loadSeq) {
-  const result = await listBatches({ ...filterArgs(), page });
-  if (seq !== loadSeq) return;
-  if (result.batches.length === 0 && result.pageCount > 0 && page > result.pageCount) {
-    return loadBatches(result.pageCount, seq);
-  }
-  batches.value = result.batches;
-  Object.assign(batchPaging, { page: result.page, pageCount: result.pageCount, total: result.total });
-}
-
-// `reset` vuelve a la primera página de ambas tablas (filtros nuevos o lote recién generado).
+// Si cambian los filtros mientras hay una consulta en vuelo, solo la última actualiza la tabla.
 let loadSeq = 0;
 
-async function loadData(reset = false) {
+async function loadBatches(page = paging.page) {
   const seq = ++loadSeq;
   loading.value = true;
   error.value = '';
   try {
-    if (reset) {
-      accrualPaging.page = 1;
-      batchPaging.page = 1;
+    const result = await listBatches({
+      projectId: filters.projectId || undefined,
+      paymentGroupId: filters.paymentGroupId || undefined,
+      periodId: filters.periodId || undefined,
+      personId: filters.personId || undefined,
+      page,
+    });
+    if (seq !== loadSeq) return;
+    // Si la página quedó fuera de rango, retrocede a la última que existe.
+    if (result.batches.length === 0 && result.pageCount > 0 && page > result.pageCount) {
+      return loadBatches(result.pageCount);
     }
-    await Promise.all([loadAccruals(accrualPaging.page, seq), loadBatches(batchPaging.page, seq)]);
+    batches.value = result.batches;
+    Object.assign(paging, { page: result.page, pageCount: result.pageCount, total: result.total });
   } catch (e) {
     if (seq === loadSeq) error.value = errorMessage(e);
   } finally {
@@ -118,16 +92,10 @@ async function loadData(reset = false) {
   }
 }
 
-watch(filters, () => void loadData(true));
-
-async function changePage(table: 'accruals' | 'batches', page: number) {
-  error.value = '';
-  try {
-    await (table === 'accruals' ? loadAccruals(page) : loadBatches(page));
-  } catch (e) {
-    error.value = errorMessage(e);
-  }
-}
+watch(filters, () => {
+  collapseAll();
+  void loadBatches(1);
+});
 
 async function load() {
   try {
@@ -135,7 +103,56 @@ async function load() {
   } catch (e) {
     error.value = errorMessage(e);
   }
-  await loadData(true);
+  await loadBatches(1);
+}
+
+// Lotes desplegados y sus causaciones. Se cargan al desplegar y se guardan mientras siga abierto.
+type BatchDetail = { loading: boolean; error: string; accruals: Accrual[] };
+const expanded = reactive(new Map<number, BatchDetail>());
+
+async function loadDetail(batchId: number) {
+  const detail = expanded.get(batchId);
+  if (!detail) return;
+  detail.loading = true;
+  detail.error = '';
+  try {
+    const all: Accrual[] = [];
+    for (let page = 1; ; page++) {
+      const result = await listAccruals({ batchId, page });
+      all.push(...result.accruals);
+      if (page >= result.pageCount) break;
+    }
+    // Primero las vigentes, por persona; las anuladas al final.
+    detail.accruals = all.sort(
+      (a, b) => Number(a.status === 'ANNULLED') - Number(b.status === 'ANNULLED') || a.person.name.localeCompare(b.person.name),
+    );
+  } catch (e) {
+    detail.error = errorMessage(e);
+  } finally {
+    detail.loading = false;
+  }
+}
+
+function toggleBatch(batchId: number) {
+  if (expanded.has(batchId)) {
+    expanded.delete(batchId);
+    return;
+  }
+  expanded.set(batchId, { loading: true, error: '', accruals: [] });
+  void loadDetail(batchId);
+}
+
+function collapseAll() {
+  expanded.clear();
+}
+
+function reloadExpanded() {
+  return Promise.all([...expanded.keys()].map((id) => loadDetail(id)));
+}
+
+async function changePage(page: number) {
+  collapseAll();
+  await loadBatches(page);
 }
 
 // Generación por lote.
@@ -181,46 +198,16 @@ async function generate() {
     const total = created.reduce((sum, batch) => sum + batch.totalCents, 0);
     const count = created.reduce((sum, batch) => sum + batch.activeCount, 0);
     formResult.value = `Se ${created.length === 1 ? 'creó 1 lote' : `crearon ${created.length} lotes`} con ${count} causaciones por ${formatUsd(total)}.`;
-    await loadData(true);
+    await loadBatches(1);
+    // Despliega lo recién generado para ver su detalle sin buscarlo.
+    for (const batch of created) {
+      if (!expanded.has(batch.id) && batches.value.some((row) => row.id === batch.id)) toggleBatch(batch.id);
+    }
   } catch (e) {
     formError.value = errorMessage(e);
   } finally {
     saving.value = false;
   }
-}
-
-// Lote desplegado: muestra las causaciones que se generaron en esa corrida.
-const expandedBatchId = ref<number | null>(null);
-const batchAccruals = ref<Accrual[]>([]);
-const batchAccrualsLoading = ref(false);
-const batchAccrualsError = ref('');
-
-async function loadBatchAccruals(batchId: number) {
-  batchAccrualsLoading.value = true;
-  batchAccrualsError.value = '';
-  try {
-    const all: Accrual[] = [];
-    for (let page = 1; ; page++) {
-      const result = await listAccruals({ batchId, page });
-      all.push(...result.accruals);
-      if (page >= result.pageCount) break;
-    }
-    if (expandedBatchId.value === batchId) batchAccruals.value = all;
-  } catch (e) {
-    batchAccrualsError.value = errorMessage(e);
-  } finally {
-    batchAccrualsLoading.value = false;
-  }
-}
-
-function toggleBatch(batchId: number) {
-  if (expandedBatchId.value === batchId) {
-    expandedBatchId.value = null;
-    return;
-  }
-  expandedBatchId.value = batchId;
-  batchAccruals.value = [];
-  void loadBatchAccruals(batchId);
 }
 
 // Anulación de una causación o de un lote completo.
@@ -246,14 +233,36 @@ async function saveAnnul() {
       await annulBatch(annulTarget.value.batch.id, annulReason.value);
     }
     annulTarget.value = null;
-    await loadData();
-    if (expandedBatchId.value !== null) await loadBatchAccruals(expandedBatchId.value);
+    await Promise.all([loadBatches(), reloadExpanded()]);
   } catch (e) {
     annulError.value = errorMessage(e);
   } finally {
     annulSaving.value = false;
   }
 }
+
+// Una causación se puede anular si no tiene pagos ni está en una solicitud abierta.
+function annulBlockedReason(accrual: Accrual) {
+  if (accrual.status === 'ANNULLED') return '';
+  if (accrual.openRequestId) return `En la solicitud #${accrual.openRequestId}`;
+  if (accrual.paidCents > 0) return 'Tiene pagos';
+  return '';
+}
+
+const selectedPersonId = computed(() => filters.personId);
+
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+// Rango compacto para la tabla: "01/11 al 15/11/2026" si ambas fechas son del mismo año.
+function shortRange(start: string, end: string) {
+  const full = formatRange(start, end);
+  if (start.slice(0, 4) !== end.slice(0, 4)) return full;
+  const [from, to] = full.split(' al ');
+  return to ? `${from.slice(0, 5)} al ${to}` : full;
+}
+const colspan = 8;
 
 onMounted(load);
 </script>
@@ -264,8 +273,9 @@ onMounted(load);
     <button v-if="canGenerate" type="button" class="button button-primary" @click="openGenerate">Generar causación</button>
   </div>
   <p class="hint">
-    Monto causado por período: monto de la asignación × días activos ÷ días del período. Los registros no se editan ni se
-    borran; los errores se corrigen anulando con un motivo.
+    Cada lote es una generación de la causación de un proyecto en un período. Despliega un lote para ver lo causado a cada
+    persona: monto de la asignación × días activos ÷ días del período. Nada se edita ni se borra; los errores se corrigen
+    anulando con un motivo.
   </p>
 
   <AppModal :open="formOpen" title="Generar causación por lote" @close="formOpen = false">
@@ -287,7 +297,7 @@ onMounted(load);
         </select>
         <span class="hint">Solo aparecen los períodos que ya cerraron.</span>
       </label>
-      <label class="field">
+      <label class="field field-wide">
         Proyecto
         <select v-model.number="form.projectId">
           <option :value="0">Todos (un lote por proyecto)</option>
@@ -297,7 +307,7 @@ onMounted(load);
         </select>
       </label>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-      <p v-if="formResult" class="hint" role="status">{{ formResult }}</p>
+      <p v-if="formResult" class="notice notice-success" role="status">{{ formResult }}</p>
       <div class="actions">
         <button type="button" class="button" @click="formOpen = false">Cerrar</button>
         <button type="submit" class="button button-primary" :disabled="saving">Generar</button>
@@ -317,27 +327,32 @@ onMounted(load);
     @close="annulTarget = null"
   >
     <form v-if="annulTarget" class="form-grid" @submit.prevent="saveAnnul">
-      <p class="hint">
-        Período:
-        {{
-          annulTarget.type === 'accrual'
-            ? formatRange(annulTarget.accrual.period.startDate, annulTarget.accrual.period.endDate)
-            : formatRange(annulTarget.batch.period.startDate, annulTarget.batch.period.endDate)
-        }}. Después de anular se puede volver a generar la causación del período.
+      <p v-if="annulTarget.type === 'batch'" class="hint">
+        Se anularán las {{ annulTarget.batch.activeCount }} causaciones vigentes del lote, por
+        {{ formatUsd(annulTarget.batch.totalCents) }}, del período
+        {{ formatRange(annulTarget.batch.period.startDate, annulTarget.batch.period.endDate) }}. Si alguna tiene pagos o está en
+        una solicitud abierta, no se anula ninguna. Después se puede volver a generar el período.
       </p>
-      <label class="field">
+      <p v-else class="hint">
+        Se anulará la causación de {{ formatUsd(annulTarget.accrual.amountCents) }} del período
+        {{ formatRange(annulTarget.accrual.period.startDate, annulTarget.accrual.period.endDate) }}. Queda registrada como
+        anulada, no se borra. Después se puede volver a generar el período.
+      </p>
+      <label class="field field-wide">
         Motivo
         <input v-model="annulReason" required minlength="5" maxlength="500" />
       </label>
       <p v-if="annulError" class="error" role="alert">{{ annulError }}</p>
       <div class="actions">
-        <button type="button" class="button" @click="annulTarget = null">Cancelar</button>
-        <button type="submit" class="button button-primary" :disabled="annulSaving">Anular</button>
+        <button type="button" class="button" @click="annulTarget = null">Volver</button>
+        <button type="submit" class="button button-danger-solid" :disabled="annulSaving">
+          {{ annulTarget.type === 'batch' ? 'Anular lote' : 'Anular causación' }}
+        </button>
       </div>
     </form>
   </AppModal>
 
-  <form class="card form-grid section-gap" @submit.prevent="loadData(true)">
+  <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
       Proyecto
       <select v-model.number="filters.projectId">
@@ -355,7 +370,7 @@ onMounted(load);
     <label class="field">
       Período
       <select v-model.number="filters.periodId" :disabled="!filters.paymentGroupId">
-        <option :value="0">Todos</option>
+        <option :value="0">{{ filters.paymentGroupId ? 'Todos' : 'Elige antes el grupo' }}</option>
         <option v-for="period in filterPeriods" :key="period.id" :value="period.id">
           {{ formatRange(period.startDate, period.endDate) }}
         </option>
@@ -368,199 +383,190 @@ onMounted(load);
         <option v-for="person in people" :key="person.id" :value="person.id">{{ person.name }}</option>
       </select>
     </label>
-    <label class="field">
-      Estado
-      <select v-model="filters.status">
-        <option value="">Todos</option>
-        <option value="UNPAID">Con saldo pendiente</option>
-        <option v-for="(label, value) in ACCRUAL_STATUS_LABELS" :key="value" :value="value">{{ label }}</option>
-      </select>
-    </label>
+    <div v-if="hasFilters || expanded.size > 0" class="actions">
+      <button v-if="expanded.size > 0" type="button" class="button" @click="collapseAll">Contraer todo</button>
+      <button v-if="hasFilters" type="button" class="button" @click="clearFilters">Limpiar filtros</button>
+    </div>
   </form>
 
-  <p v-if="error" class="error" role="alert">{{ error }}</p>
-  <p v-else-if="loading">Cargando…</p>
+  <p v-if="error" class="error section-gap" role="alert">{{ error }}</p>
+  <p v-else-if="loading && batches.length === 0" class="section-gap">Cargando…</p>
   <template v-else>
-    <h2>Causaciones</h2>
-    <p class="hint">
-      Causado {{ formatUsd(totals.amountCents) }} · Pagado {{ formatUsd(totals.paidCents) }} · Pendiente
-      {{ formatUsd(totals.pendingCents) }}
-    </p>
-    <div class="table-wrapper">
-      <table>
+    <div class="table-wrapper section-gap" :class="{ 'is-loading': loading }">
+      <table class="batch-table">
         <thead>
           <tr>
-            <th scope="col">Persona</th>
-            <th scope="col">Proyecto</th>
-            <th scope="col">Período</th>
-            <th scope="col">Días</th>
-            <th scope="col" class="num">Monto por período</th>
-            <th scope="col" class="num">Causado</th>
-            <th scope="col" class="num">Pagado</th>
-            <th scope="col" class="num">Pendiente</th>
-            <th scope="col">Estado</th>
-            <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="accrual in accruals" :key="accrual.id">
-            <td>
-              {{ accrual.person.name }}
-              <span class="permission-code">{{ accrual.person.idNumber }}</span>
-            </td>
-            <td class="nowrap" :title="accrual.project.name">{{ accrual.project.code }}</td>
-            <td class="nowrap">
-              {{ formatRange(accrual.period.startDate, accrual.period.endDate) }}
-              <span class="permission-code">Lote #{{ accrual.batchId }}</span>
-            </td>
-            <td class="nowrap">{{ accrual.activeDays }} / {{ accrual.periodDays }}</td>
-            <td class="num">{{ formatUsd(accrual.assignmentAmountCents) }}</td>
-            <td class="num">{{ formatUsd(accrual.amountCents) }}</td>
-            <td class="num">{{ formatUsd(accrual.paidCents) }}</td>
-            <td class="num">{{ formatUsd(accrual.pendingCents) }}</td>
-            <td>
-              <StatusBadge :label="ACCRUAL_STATUS_LABELS[accrual.status]" :tone="ACCRUAL_STATUS_TONES[accrual.status]" />
-              <span v-if="accrual.openRequestId" class="permission-code">Solicitud #{{ accrual.openRequestId }}</span>
-              <span v-if="accrual.annulmentReason" class="permission-code">{{ accrual.annulmentReason }}</span>
-            </td>
-            <td v-if="canGenerate">
-              <button
-                v-if="accrual.status === 'PENDING' && !accrual.openRequestId"
-                type="button"
-                class="button"
-                @click="openAnnul({ type: 'accrual', accrual })"
-              >
-                Anular
-              </button>
-            </td>
-          </tr>
-          <tr v-if="accruals.length === 0">
-            <td :colspan="canGenerate ? 10 : 9">No hay causaciones con esos filtros.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <PaginationBar
-      :page="accrualPaging.page"
-      :page-count="accrualPaging.pageCount"
-      :total="accrualPaging.total"
-      noun="causaciones"
-      @change="changePage('accruals', $event)"
-    />
-
-    <h2 class="section-gap">Lotes</h2>
-    <p class="hint">
-      Un lote es cada vez que se generó la causación de un proyecto en un período. Agrupa lo causado en esa corrida, con
-      quién y cuándo la hizo. Si después se agrega a alguien o se anula algo, la siguiente generación crea un lote
-      complementario. Anular un lote anula de una vez todas sus causaciones vigentes. Filtra por proyecto y período, no por
-      persona ni estado.
-    </p>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col"><span class="sr-only">Ver causaciones</span></th>
             <th scope="col">Lote</th>
             <th scope="col">Proyecto</th>
             <th scope="col">Período</th>
-            <th scope="col">Causaciones vigentes</th>
-            <th scope="col" class="num">Total</th>
+            <th scope="col" class="num">Causado</th>
+            <th scope="col" class="num">Pagado</th>
+            <th scope="col" class="num">Pendiente</th>
             <th scope="col">Generado</th>
-            <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
+            <th scope="col" class="expand-col"><span class="sr-only">Detalle</span></th>
           </tr>
         </thead>
         <tbody>
           <template v-for="batch in batches" :key="batch.id">
-            <tr>
+            <!-- La fila completa despliega con el ratón; con teclado se usa el botón de la última columna. -->
+            <tr class="expand-row" :class="{ 'is-expanded': expanded.has(batch.id) }" @click="toggleBatch(batch.id)">
               <td>
-                <button
-                  type="button"
-                  class="button button-icon"
-                  :aria-expanded="expandedBatchId === batch.id"
-                  :aria-label="`${expandedBatchId === batch.id ? 'Ocultar' : 'Ver'} causaciones del lote #${batch.id}`"
-                  @click="toggleBatch(batch.id)"
-                >
-                  <AppIcon name="chevron" :size="16" :class="{ 'is-open': expandedBatchId === batch.id }" />
-                </button>
+                <strong>#{{ batch.id }}</strong>
+                <span class="permission-code nowrap">{{ plural(batch.activeCount, 'causación', 'causaciones') }}</span>
+                <span v-if="batch.accrualCount > batch.activeCount" class="permission-code nowrap">
+                  {{ plural(batch.accrualCount - batch.activeCount, 'anulada', 'anuladas') }}
+                </span>
               </td>
-              <td class="nowrap">#{{ batch.id }}</td>
               <td :title="batch.project.name">
-                {{ batch.project.code }} <span class="permission-code">{{ batch.project.name }}</span>
+                {{ batch.project.code }}
+                <span class="permission-code cell-truncate">{{ batch.project.name }}</span>
               </td>
-              <td class="nowrap">
-                {{ formatRange(batch.period.startDate, batch.period.endDate) }}
+              <td>
+                <span class="nowrap">{{ shortRange(batch.period.startDate, batch.period.endDate) }}</span>
                 <span class="permission-code">{{ batch.period.paymentGroup.name }}</span>
               </td>
-              <td>{{ batch.activeCount }} de {{ batch.accrualCount }}</td>
               <td class="num">{{ formatUsd(batch.totalCents) }}</td>
-              <td>
-                {{ batch.createdBy.name }}
-                <span class="permission-code">{{ formatDateTime(batch.createdAt) }}</span>
+              <td class="num">{{ formatUsd(batch.paidCents) }}</td>
+              <td class="num">
+                <strong v-if="batch.pendingCents > 0">{{ formatUsd(batch.pendingCents) }}</strong>
+                <span v-else class="hint">{{ formatUsd(0) }}</span>
               </td>
-              <td v-if="canGenerate">
+              <td>
+                <span class="nowrap">{{ formatDateTime(batch.createdAt) }}</span>
+                <span class="permission-code nowrap-wide">{{ batch.createdBy.name }}</span>
+              </td>
+              <td class="expand-col" @click.stop>
                 <button
-                  v-if="batch.activeCount > 0"
                   type="button"
-                  class="button"
-                  @click="openAnnul({ type: 'batch', batch })"
+                  class="row-chevron"
+                  :class="{ 'is-open': expanded.has(batch.id) }"
+                  :aria-expanded="expanded.has(batch.id)"
+                  :aria-controls="`lote-${batch.id}`"
+                  :aria-label="`${expanded.has(batch.id) ? 'Ocultar' : 'Ver'} las causaciones del lote ${batch.id}`"
+                  @click="toggleBatch(batch.id)"
                 >
-                  Anular lote
+                  <AppIcon name="chevron" :size="16" />
                 </button>
               </td>
             </tr>
-            <tr v-if="expandedBatchId === batch.id" class="batch-detail">
-              <td :colspan="canGenerate ? 8 : 7">
-                <p v-if="batchAccrualsError" class="error" role="alert">{{ batchAccrualsError }}</p>
-                <p v-else-if="batchAccrualsLoading">Cargando…</p>
-                <table v-else class="nested-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Persona</th>
-                      <th scope="col">Días</th>
-                      <th scope="col" class="num">Monto por período</th>
-                      <th scope="col" class="num">Causado</th>
-                      <th scope="col" class="num">Pagado</th>
-                      <th scope="col" class="num">Pendiente</th>
-                      <th scope="col">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="accrual in batchAccruals" :key="accrual.id">
-                      <td>
-                        {{ accrual.person.name }}
-                        <span class="permission-code">{{ accrual.person.idNumber }}</span>
-                      </td>
-                      <td class="nowrap">{{ accrual.activeDays }} / {{ accrual.periodDays }}</td>
-                      <td class="num">{{ formatUsd(accrual.assignmentAmountCents) }}</td>
-                      <td class="num">{{ formatUsd(accrual.amountCents) }}</td>
-                      <td class="num">{{ formatUsd(accrual.paidCents) }}</td>
-                      <td class="num">{{ formatUsd(accrual.pendingCents) }}</td>
-                      <td>
-                        <StatusBadge
-                          :label="ACCRUAL_STATUS_LABELS[accrual.status]"
-                          :tone="ACCRUAL_STATUS_TONES[accrual.status]"
-                        />
-                        <span v-if="accrual.openRequestId" class="permission-code">Solicitud #{{ accrual.openRequestId }}</span>
-                        <span v-if="accrual.annulmentReason" class="permission-code">{{ accrual.annulmentReason }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+
+            <tr v-if="expanded.has(batch.id)" :id="`lote-${batch.id}`" class="expand-detail-row">
+              <td :colspan="colspan" class="expand-detail-cell">
+                <p v-if="expanded.get(batch.id)!.error" class="error" role="alert">{{ expanded.get(batch.id)!.error }}</p>
+                <p v-else-if="expanded.get(batch.id)!.loading" class="hint">Cargando causaciones…</p>
+                <div v-else class="batch-panel">
+                  <div class="batch-panel-head">
+                    <span>
+                      Lote #{{ batch.id }} · {{ batch.project.code }} {{ batch.project.name }} ·
+                      {{ formatRange(batch.period.startDate, batch.period.endDate) }} ({{ batch.period.paymentGroup.name }})
+                    </span>
+                    <template v-if="canGenerate && batch.activeCount > 0">
+                      <button
+                        v-if="batch.paidCents === 0"
+                        type="button"
+                        class="button button-danger"
+                        @click="openAnnul({ type: 'batch', batch })"
+                      >
+                        Anular lote
+                      </button>
+                      <span v-else class="hint">El lote tiene pagos: no se puede anular completo.</span>
+                    </template>
+                  </div>
+                  <div class="batch-panel-scroll">
+                  <table class="batch-accruals">
+                    <thead>
+                      <tr>
+                        <th scope="col">Persona</th>
+                        <th scope="col">Días activos</th>
+                        <th scope="col" class="num">Monto por período</th>
+                        <th scope="col" class="num">Causado</th>
+                        <th scope="col" class="num">Pagado</th>
+                        <th scope="col" class="num">Pendiente</th>
+                        <th scope="col">Estado</th>
+                        <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="accrual in expanded.get(batch.id)!.accruals"
+                        :key="accrual.id"
+                        :class="{
+                          'is-annulled': accrual.status === 'ANNULLED',
+                          'is-highlighted': accrual.person.id === selectedPersonId,
+                        }"
+                      >
+                        <td>
+                          {{ accrual.person.name }}
+                          <span class="permission-code">{{ accrual.person.idNumber }} · causación #{{ accrual.id }}</span>
+                        </td>
+                        <td class="nowrap">
+                          {{ accrual.activeDays }} de {{ accrual.periodDays }}
+                          <span
+                            v-if="accrual.activeDays < accrual.periodDays"
+                            class="permission-code"
+                            title="Trabajó parte del período: se causa en proporción a los días"
+                          >
+                            prorrateado
+                          </span>
+                        </td>
+                        <td class="num">{{ formatUsd(accrual.assignmentAmountCents) }}</td>
+                        <td class="num">{{ formatUsd(accrual.amountCents) }}</td>
+                        <td class="num">{{ formatUsd(accrual.paidCents) }}</td>
+                        <td class="num">{{ formatUsd(accrual.pendingCents) }}</td>
+                        <td>
+                          <StatusBadge
+                            :label="ACCRUAL_STATUS_LABELS[accrual.status]"
+                            :tone="ACCRUAL_STATUS_TONES[accrual.status]"
+                          />
+                          <span v-if="accrual.annulmentReason" class="permission-code">{{ accrual.annulmentReason }}</span>
+                          <span v-else-if="annulBlockedReason(accrual)" class="permission-code">
+                            {{ annulBlockedReason(accrual) }}
+                          </span>
+                        </td>
+                        <td v-if="canGenerate" class="nowrap">
+                          <button
+                            v-if="accrual.status === 'PENDING' && !accrual.openRequestId"
+                            type="button"
+                            class="button button-danger"
+                            @click="openAnnul({ type: 'accrual', accrual })"
+                          >
+                            Anular
+                          </button>
+                        </td>
+                      </tr>
+                      <tr v-if="expanded.get(batch.id)!.accruals.length === 0">
+                        <td :colspan="canGenerate ? 8 : 7" class="hint">El lote no tiene causaciones.</td>
+                      </tr>
+                    </tbody>
+                    <tfoot v-if="expanded.get(batch.id)!.accruals.length > 0">
+                      <tr>
+                        <th scope="row" colspan="3">Total vigente</th>
+                        <td class="num">{{ formatUsd(batch.totalCents) }}</td>
+                        <td class="num">{{ formatUsd(batch.paidCents) }}</td>
+                        <td class="num">{{ formatUsd(batch.pendingCents) }}</td>
+                        <td :colspan="canGenerate ? 2 : 1"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                  </div>
+                </div>
               </td>
             </tr>
           </template>
           <tr v-if="batches.length === 0">
-            <td :colspan="canGenerate ? 8 : 7">No hay lotes con esos filtros.</td>
+            <td :colspan="colspan">
+              {{ hasFilters ? 'No hay lotes con esos filtros.' : 'Todavía no se ha generado ninguna causación.' }}
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
     <PaginationBar
-      :page="batchPaging.page"
-      :page-count="batchPaging.pageCount"
-      :total="batchPaging.total"
+      :page="paging.page"
+      :page-count="paging.pageCount"
+      :total="paging.total"
       noun="lotes"
-      @change="changePage('batches', $event)"
+      @change="changePage"
     />
   </template>
 </template>

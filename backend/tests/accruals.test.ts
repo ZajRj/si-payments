@@ -121,6 +121,19 @@ describe('generación por lote', () => {
     expect(res.body.batches[0].totalCents).toBe(30_000 + 45_000 + 3_125);
   });
 
+  it('filtra los lotes por grupo de pago y por persona, con lo pagado y lo pendiente', async () => {
+    const byGroup = (await generator.get('/api/accruals/batches').query({ paymentGroupId: groupId, pageSize: 50 }).expect(200)).body
+      .batches;
+    expect(byGroup.length).toBeGreaterThan(0);
+    expect(byGroup.every((b: { period: { paymentGroup: { id: number } } }) => b.period.paymentGroup.id === groupId)).toBe(true);
+
+    // Carla solo trabajó del 16 al 20 de enero: un único lote la incluye.
+    const byCarla = (await generator.get('/api/accruals/batches').query({ personId: carla }).expect(200)).body.batches;
+    expect(byCarla).toHaveLength(1);
+    expect(byCarla[0]).toMatchObject({ period: { startDate: '2026-01-16' }, paidCents: 0 });
+    expect(byCarla[0].pendingCents).toBe(byCarla[0].totalCents);
+  });
+
   it('una asignación retroactiva se causa en un lote complementario', async () => {
     const dario = await createPerson('V-40100004', 'Darío Retroactivo');
     await createAssignment(dario, projectId, 15_000, '2026-01-11');

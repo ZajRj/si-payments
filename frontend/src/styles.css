@@ -1393,35 +1393,159 @@ td small {
   border-color: #f0d79a;
 }
 
-/* Botón cuadrado con solo un ícono (desplegar un lote). */
-.button.button-icon {
-  width: 32px;
-  height: 32px;
-  min-height: 0;
-  padding: 0;
-  justify-content: center;
+/* ---------- Filas desplegables (lotes de causación), con el mismo patrón que Auditoría ---------- */
+
+.expand-row {
+  cursor: pointer;
 }
 
-.button-icon .icon {
-  transition: transform 0.15s ease;
+.expand-row:hover {
+  background: #f3f7f6;
 }
 
-.button-icon .icon.is-open {
-  transform: rotate(90deg);
-}
-
-/* Causaciones de un lote, desplegadas debajo de su fila. */
-.batch-detail>td {
-  padding: 0.5rem 0.75rem 0.875rem 3rem;
+.expand-row.is-expanded {
   background: var(--surface-alt);
 }
 
-.nested-table {
-  width: 100%;
-  font-size: 0.8125rem;
-  background: var(--surface, #fff);
+.expand-row.is-expanded>td {
+  border-bottom-color: transparent;
+}
+
+.expand-col {
+  width: 3rem;
+  text-align: right;
+}
+
+.row-chevron {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    transform var(--ease),
+    background-color var(--ease),
+    color var(--ease),
+    border-color var(--ease);
+}
+
+.expand-row:hover .row-chevron {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.row-chevron:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.row-chevron.is-open {
+  transform: rotate(90deg);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: #b7dfcd;
+}
+
+.expand-detail-row:hover {
+  background: transparent;
+}
+
+.expand-detail-cell {
+  padding: 0.25rem 1rem 1.125rem;
+  background: var(--surface-alt);
+}
+
+/* Causaciones del lote: una tarjeta blanca dentro de la fila desplegada.
+   width: 0 + min-width: 100% evita que la tabla interna ensanche la tabla de lotes:
+   si no cabe, se desplaza dentro de la tarjeta. */
+.batch-panel {
+  width: 0;
+  min-width: 100%;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+.batch-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.batch-panel-head .hint {
+  font-weight: 400;
+}
+
+.batch-panel-scroll {
+  overflow-x: auto;
+}
+
+.batch-accruals {
+  font-size: 0.8125rem;
+}
+
+.batch-accruals thead th {
+  position: static;
+  background: var(--bg);
+}
+
+.batch-accruals tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.batch-accruals tr.is-annulled td {
+  color: var(--muted);
+}
+
+.batch-accruals tr.is-annulled td.num {
+  text-decoration: line-through;
+}
+
+.batch-accruals tr.is-highlighted td {
+  background: var(--accent-soft);
+}
+
+/* Texto secundario en una sola línea, cortado con puntos suspensivos (el completo va en el title). */
+.cell-truncate {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1400px) {
+  .cell-truncate {
+    max-width: 9rem;
+  }
+}
+
+@media (max-width: 1300px) {
+  .cell-truncate {
+    max-width: 7.5rem;
+  }
+}
+
+/* En una sola línea solo si la pantalla tiene espacio; en las angostas puede partirse. */
+@media (min-width: 1300px) {
+  .nowrap-wide {
+    white-space: nowrap;
+  }
+}
+
+.table-wrapper.is-loading {
+  opacity: 0.6;
+  transition: opacity var(--ease);
 }
 
 /* Contraseña con botón para mostrarla. */

@@ -46,7 +46,11 @@ export type AccrualBatch = {
   accrualCount: number;
   activeCount: number;
   totalCents: number;
+  paidCents: number;
+  pendingCents: number;
 };
+
+export type BatchFilters = { projectId?: number; periodId?: number; paymentGroupId?: number; personId?: number };
 
 export type AccrualFilters = {
   projectId?: number;
@@ -74,7 +78,7 @@ export function listAccruals(filters: AccrualFilters & { page?: number } = {}) {
   return http<AccrualPage>(`/accruals?${query(filters)}`);
 }
 
-export function listBatches(filters: { projectId?: number; periodId?: number; page?: number } = {}) {
+export function listBatches(filters: BatchFilters & { page?: number } = {}) {
   return http<BatchPage>(`/accruals/batches?${query(filters)}`);
 }
 

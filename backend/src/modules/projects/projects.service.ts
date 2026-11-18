@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { audit } from '../../lib/audit.js';
 import { businessToday, displayDate, formatDateOnly } from '../../lib/dates.js';
@@ -11,7 +12,7 @@ export const SCOPES = ['INTERNAL', 'EXTERNAL'] as const;
 export type Scope = (typeof SCOPES)[number];
 
 type ProjectInput = {
-  // Sin código, se genera a partir del área (FIS-001, FIS-002…). La interfaz nunca lo envía.
+  // Sin código, se genera al azar con el prefijo del área (BIO-7KQ3). La interfaz nunca lo envía.
   code?: string;
   name: string;
   areaId: number;
@@ -59,7 +60,7 @@ export async function createProject(actorId: number, data: ProjectInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const area = await assertAreaUsable(tx, data.areaId);
-      const code = data.code ?? (await nextCode(tx, area.name));
+      const code = data.code ?? (await randomCode(tx, area.name));
       const project = toProjectDto(await tx.project.create({ data: { ...data, code }, include: projectInclude }));
       await audit(tx, { userId: actorId, action: 'CREATE', entity: 'Project', entityId: project.id, after: project });
       return project;
@@ -147,20 +148,21 @@ export function areaPrefix(areaName: string) {
   return letters.padEnd(3, 'X').slice(0, 3);
 }
 
-// Siguiente código libre del prefijo: FIS-001, FIS-002… Si dos áreas comparten prefijo, comparten la numeración.
-async function nextCode(tx: Prisma.TransactionClient, areaName: string) {
-  const prefix = areaPrefix(areaName);
-  const taken = await tx.project.findMany({ where: { code: { startsWith: `${prefix}-` } }, select: { code: true } });
-  const last = taken.reduce((max, { code }) => {
-    const match = /^[A-Z]{3}-(\d+)$/.exec(code);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0);
-  return `${prefix}-${String(last + 1).padStart(3, '0')}`;
-}
+// Sin 0/O, 1/I/L: el código se lee y se dicta sin confusiones.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 4;
+const CODE_ATTEMPTS = 10;
 
-// Vista previa del código que recibirá un proyecto nuevo del área. El definitivo se asigna al guardar.
-export async function previewNextCode(areaId: number) {
-  return prisma.$transaction(async (tx) => nextCode(tx, (await assertAreaUsable(tx, areaId)).name));
+// Código aleatorio con el prefijo del área: BIO-7KQ3. Con 31^4 (unas 920 mil) combinaciones por prefijo,
+// chocar es improbable; si pasa, se prueba otro.
+async function randomCode(tx: Prisma.TransactionClient, areaName: string) {
+  const prefix = areaPrefix(areaName);
+  for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
+    const suffix = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+    const code = `${prefix}-${suffix}`;
+    if (!(await tx.project.findUnique({ where: { code }, select: { id: true } }))) return code;
+  }
+  throw new HttpError(503, 'CODE_GENERATION_FAILED', 'No se pudo generar un código libre. Intenta de nuevo');
 }
 
 // Cambiar la vigencia no puede dejar asignaciones fuera de ella.
