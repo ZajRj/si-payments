@@ -16,6 +16,7 @@ import { errorMessage } from '@/api/http';
 import { listPaymentGroups, listPeriods, type PaymentGroup, type Period } from '@/api/payment-groups';
 import { listPeople, type Person } from '@/api/people';
 import { listProjects, type Project } from '@/api/projects';
+import AppIcon from '@/components/AppIcon.vue';
 import AppModal from '@/components/AppModal.vue';
 import PaginationBar from '@/components/PaginationBar.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -188,6 +189,40 @@ async function generate() {
   }
 }
 
+// Lote desplegado: muestra las causaciones que se generaron en esa corrida.
+const expandedBatchId = ref<number | null>(null);
+const batchAccruals = ref<Accrual[]>([]);
+const batchAccrualsLoading = ref(false);
+const batchAccrualsError = ref('');
+
+async function loadBatchAccruals(batchId: number) {
+  batchAccrualsLoading.value = true;
+  batchAccrualsError.value = '';
+  try {
+    const all: Accrual[] = [];
+    for (let page = 1; ; page++) {
+      const result = await listAccruals({ batchId, page });
+      all.push(...result.accruals);
+      if (page >= result.pageCount) break;
+    }
+    if (expandedBatchId.value === batchId) batchAccruals.value = all;
+  } catch (e) {
+    batchAccrualsError.value = errorMessage(e);
+  } finally {
+    batchAccrualsLoading.value = false;
+  }
+}
+
+function toggleBatch(batchId: number) {
+  if (expandedBatchId.value === batchId) {
+    expandedBatchId.value = null;
+    return;
+  }
+  expandedBatchId.value = batchId;
+  batchAccruals.value = [];
+  void loadBatchAccruals(batchId);
+}
+
 // Anulación de una causación o de un lote completo.
 const annulTarget = ref<{ type: 'accrual'; accrual: Accrual } | { type: 'batch'; batch: AccrualBatch } | null>(null);
 const annulReason = ref('');
@@ -212,6 +247,7 @@ async function saveAnnul() {
     }
     annulTarget.value = null;
     await loadData();
+    if (expandedBatchId.value !== null) await loadBatchAccruals(expandedBatchId.value);
   } catch (e) {
     annulError.value = errorMessage(e);
   } finally {
@@ -306,7 +342,7 @@ onMounted(load);
       Proyecto
       <select v-model.number="filters.projectId">
         <option :value="0">Todos</option>
-        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }}</option>
+        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }} · {{ project.name }}</option>
       </select>
     </label>
     <label class="field">
@@ -345,60 +381,7 @@ onMounted(load);
   <p v-if="error" class="error" role="alert">{{ error }}</p>
   <p v-else-if="loading">Cargando…</p>
   <template v-else>
-    <h2>Lotes</h2>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Lote</th>
-            <th scope="col">Proyecto</th>
-            <th scope="col">Período</th>
-            <th scope="col">Causaciones vigentes</th>
-            <th scope="col" class="num">Total</th>
-            <th scope="col">Generado</th>
-            <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="batch in batches" :key="batch.id">
-            <td class="nowrap">#{{ batch.id }}</td>
-            <td class="nowrap" :title="batch.project.name">{{ batch.project.code }}</td>
-            <td class="nowrap">
-              {{ formatRange(batch.period.startDate, batch.period.endDate) }}
-              <span class="permission-code">{{ batch.period.paymentGroup.name }}</span>
-            </td>
-            <td>{{ batch.activeCount }} de {{ batch.accrualCount }}</td>
-            <td class="num">{{ formatUsd(batch.totalCents) }}</td>
-            <td>
-              {{ batch.createdBy.name }}
-              <span class="permission-code">{{ formatDateTime(batch.createdAt) }}</span>
-            </td>
-            <td v-if="canGenerate">
-              <button
-                v-if="batch.activeCount > 0"
-                type="button"
-                class="button"
-                @click="openAnnul({ type: 'batch', batch })"
-              >
-                Anular lote
-              </button>
-            </td>
-          </tr>
-          <tr v-if="batches.length === 0">
-            <td :colspan="canGenerate ? 7 : 6">No hay lotes con esos filtros.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <PaginationBar
-      :page="batchPaging.page"
-      :page-count="batchPaging.pageCount"
-      :total="batchPaging.total"
-      noun="lotes"
-      @change="changePage('batches', $event)"
-    />
-
-    <h2 class="section-gap">Causaciones</h2>
+    <h2>Causaciones</h2>
     <p class="hint">
       Causado {{ formatUsd(totals.amountCents) }} · Pagado {{ formatUsd(totals.paidCents) }} · Pendiente
       {{ formatUsd(totals.pendingCents) }}
@@ -463,6 +446,121 @@ onMounted(load);
       :total="accrualPaging.total"
       noun="causaciones"
       @change="changePage('accruals', $event)"
+    />
+
+    <h2 class="section-gap">Lotes</h2>
+    <p class="hint">
+      Un lote es cada vez que se generó la causación de un proyecto en un período. Agrupa lo causado en esa corrida, con
+      quién y cuándo la hizo. Si después se agrega a alguien o se anula algo, la siguiente generación crea un lote
+      complementario. Anular un lote anula de una vez todas sus causaciones vigentes. Filtra por proyecto y período, no por
+      persona ni estado.
+    </p>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only">Ver causaciones</span></th>
+            <th scope="col">Lote</th>
+            <th scope="col">Proyecto</th>
+            <th scope="col">Período</th>
+            <th scope="col">Causaciones vigentes</th>
+            <th scope="col" class="num">Total</th>
+            <th scope="col">Generado</th>
+            <th v-if="canGenerate" scope="col"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="batch in batches" :key="batch.id">
+            <tr>
+              <td>
+                <button
+                  type="button"
+                  class="button button-icon"
+                  :aria-expanded="expandedBatchId === batch.id"
+                  :aria-label="`${expandedBatchId === batch.id ? 'Ocultar' : 'Ver'} causaciones del lote #${batch.id}`"
+                  @click="toggleBatch(batch.id)"
+                >
+                  <AppIcon name="chevron" :size="16" :class="{ 'is-open': expandedBatchId === batch.id }" />
+                </button>
+              </td>
+              <td class="nowrap">#{{ batch.id }}</td>
+              <td :title="batch.project.name">
+                {{ batch.project.code }} <span class="permission-code">{{ batch.project.name }}</span>
+              </td>
+              <td class="nowrap">
+                {{ formatRange(batch.period.startDate, batch.period.endDate) }}
+                <span class="permission-code">{{ batch.period.paymentGroup.name }}</span>
+              </td>
+              <td>{{ batch.activeCount }} de {{ batch.accrualCount }}</td>
+              <td class="num">{{ formatUsd(batch.totalCents) }}</td>
+              <td>
+                {{ batch.createdBy.name }}
+                <span class="permission-code">{{ formatDateTime(batch.createdAt) }}</span>
+              </td>
+              <td v-if="canGenerate">
+                <button
+                  v-if="batch.activeCount > 0"
+                  type="button"
+                  class="button"
+                  @click="openAnnul({ type: 'batch', batch })"
+                >
+                  Anular lote
+                </button>
+              </td>
+            </tr>
+            <tr v-if="expandedBatchId === batch.id" class="batch-detail">
+              <td :colspan="canGenerate ? 8 : 7">
+                <p v-if="batchAccrualsError" class="error" role="alert">{{ batchAccrualsError }}</p>
+                <p v-else-if="batchAccrualsLoading">Cargando…</p>
+                <table v-else class="nested-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Persona</th>
+                      <th scope="col">Días</th>
+                      <th scope="col" class="num">Monto por período</th>
+                      <th scope="col" class="num">Causado</th>
+                      <th scope="col" class="num">Pagado</th>
+                      <th scope="col" class="num">Pendiente</th>
+                      <th scope="col">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="accrual in batchAccruals" :key="accrual.id">
+                      <td>
+                        {{ accrual.person.name }}
+                        <span class="permission-code">{{ accrual.person.idNumber }}</span>
+                      </td>
+                      <td class="nowrap">{{ accrual.activeDays }} / {{ accrual.periodDays }}</td>
+                      <td class="num">{{ formatUsd(accrual.assignmentAmountCents) }}</td>
+                      <td class="num">{{ formatUsd(accrual.amountCents) }}</td>
+                      <td class="num">{{ formatUsd(accrual.paidCents) }}</td>
+                      <td class="num">{{ formatUsd(accrual.pendingCents) }}</td>
+                      <td>
+                        <StatusBadge
+                          :label="ACCRUAL_STATUS_LABELS[accrual.status]"
+                          :tone="ACCRUAL_STATUS_TONES[accrual.status]"
+                        />
+                        <span v-if="accrual.openRequestId" class="permission-code">Solicitud #{{ accrual.openRequestId }}</span>
+                        <span v-if="accrual.annulmentReason" class="permission-code">{{ accrual.annulmentReason }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </template>
+          <tr v-if="batches.length === 0">
+            <td :colspan="canGenerate ? 8 : 7">No hay lotes con esos filtros.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <PaginationBar
+      :page="batchPaging.page"
+      :page-count="batchPaging.pageCount"
+      :total="batchPaging.total"
+      noun="lotes"
+      @change="changePage('batches', $event)"
     />
   </template>
 </template>

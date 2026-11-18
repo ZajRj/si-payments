@@ -19,7 +19,7 @@ const formOpen = ref(false);
 const editingId = ref<number | null>(null);
 const saving = ref(false);
 const formError = ref('');
-const form = reactive({ name: '', active: true });
+const form = reactive({ name: '', description: '', active: true });
 
 async function load() {
   loading.value = true;
@@ -35,14 +35,14 @@ async function load() {
 
 function openCreate() {
   editingId.value = null;
-  Object.assign(form, { name: '', active: true });
+  Object.assign(form, { name: '', description: '', active: true });
   formError.value = '';
   formOpen.value = true;
 }
 
 function openEdit(area: Area) {
   editingId.value = area.id;
-  Object.assign(form, { name: area.name, active: area.active });
+  Object.assign(form, { name: area.name, description: area.description, active: area.active });
   formError.value = '';
   formOpen.value = true;
 }
@@ -52,7 +52,7 @@ async function save() {
   formError.value = '';
   try {
     if (editingId.value === null) {
-      await createArea(form.name);
+      await createArea({ name: form.name, description: form.description });
     } else {
       await updateArea(editingId.value, { ...form });
     }
@@ -80,9 +80,14 @@ onMounted(load);
     @close="formOpen = false"
   >
     <form class="form-grid" @submit.prevent="save">
-      <label class="field">
+      <label class="field field-wide">
         Nombre
         <input v-model="form.name" required maxlength="80" />
+      </label>
+      <label class="field field-wide">
+        Descripción
+        <textarea v-model="form.description" required minlength="10" maxlength="500" rows="3" />
+        <span class="hint">Qué proyectos van en esta área. Sirve para clasificar un proyecto nuevo sin dudas.</span>
       </label>
       <label v-if="editingId !== null" class="checkbox">
         <input v-model="form.active" type="checkbox" />
@@ -103,13 +108,15 @@ onMounted(load);
       <thead>
         <tr>
           <th scope="col">Nombre</th>
+          <th scope="col">Descripción</th>
           <th scope="col">Estado</th>
           <th v-if="canManage" scope="col"><span class="sr-only">Acciones</span></th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="area in areas" :key="area.id">
-          <td>{{ area.name }}</td>
+          <td class="nowrap">{{ area.name }}</td>
+          <td>{{ area.description || '—' }}</td>
           <td><StatusBadge :label="area.active ? 'Activa' : 'Inactiva'" :tone="activeTone(area.active)" /></td>
           <td v-if="canManage">
             <button type="button" class="button" @click="openEdit(area)">Editar</button>

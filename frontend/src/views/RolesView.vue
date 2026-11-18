@@ -19,14 +19,28 @@ const activePermissionCodes = computed(() => {
 
 const activeCount = computed(() => activePermissionCodes.value.size);
 
+type AssignmentFilter = 'all' | 'assigned' | 'unassigned';
+const ASSIGNMENT_FILTERS: { value: AssignmentFilter; label: string }[] = [
+  { value: 'all', label: 'Todos' },
+  { value: 'assigned', label: 'Asignados' },
+  { value: 'unassigned', label: 'No asignados' },
+];
+const assignmentFilter = ref<AssignmentFilter>('all');
+
+function filterCount(filter: AssignmentFilter) {
+  if (filter === 'assigned') return activeCount.value;
+  if (filter === 'unassigned') return allPermissions.value.length - activeCount.value;
+  return allPermissions.value.length;
+}
+
 const filteredPermissions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  if (!query) {
-    return allPermissions.value;
-  }
-  return allPermissions.value.filter(
-    (p) => p.description.toLowerCase().includes(query) || p.code.toLowerCase().includes(query),
-  );
+  return allPermissions.value.filter((p) => {
+    const assigned = isPermissionEnabled(p.code);
+    if (assignmentFilter.value === 'assigned' && !assigned) return false;
+    if (assignmentFilter.value === 'unassigned' && assigned) return false;
+    return !query || p.description.toLowerCase().includes(query) || p.code.toLowerCase().includes(query);
+  });
 });
 
 function isPermissionEnabled(code: string): boolean {
@@ -91,6 +105,19 @@ onMounted(async () => {
       </div>
 
       <div class="permissions-summary-actions">
+        <div class="chips" role="group" aria-label="Mostrar permisos">
+          <button
+            v-for="filter in ASSIGNMENT_FILTERS"
+            :key="filter.value"
+            type="button"
+            class="chip"
+            :aria-pressed="assignmentFilter === filter.value"
+            @click="assignmentFilter = filter.value"
+          >
+            {{ filter.label }}
+            <span class="chip-count">{{ filterCount(filter.value) }}</span>
+          </button>
+        </div>
         <input
           v-model="searchQuery"
           type="search"
@@ -121,7 +148,7 @@ onMounted(async () => {
       </div>
 
       <p v-if="filteredPermissions.length === 0" class="hint empty-hint">
-        No se encontraron permisos que coincidan con "{{ searchQuery }}".
+        No hay permisos que coincidan con los filtros.
       </p>
     </div>
   </div>

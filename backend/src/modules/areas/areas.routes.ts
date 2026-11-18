@@ -8,6 +8,8 @@ import { createArea, listAreas, updateArea } from './areas.service.js';
 
 const createAreaSchema = z.object({
   name: z.string().trim().min(1).max(80),
+  // Define qué proyectos van al área, para clasificarlos sin ambigüedad.
+  description: z.string().trim().min(10, 'Describe qué proyectos van en esta área (al menos 10 caracteres)').max(500),
 });
 
 const updateAreaSchema = createAreaSchema.partial().extend({ active: z.boolean().optional() });
