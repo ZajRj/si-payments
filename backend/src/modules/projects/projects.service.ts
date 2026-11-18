@@ -42,6 +42,18 @@ export async function listProjects({ areaId, active }: ListFilters) {
   }));
 }
 
+export async function getProject(id: number) {
+  const project = await prisma.project.findUnique({
+    where: { id },
+    include: { ...projectInclude, _count: { select: { assignments: true } } },
+  });
+  if (!project) {
+    throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Proyecto no encontrado');
+  }
+  const { _count, ...rest } = project;
+  return { ...toProjectDto(rest), assignmentCount: _count.assignments };
+}
+
 export async function createProject(actorId: number, data: ProjectInput) {
   assertValidRange(data.startDate, data.endDate);
 

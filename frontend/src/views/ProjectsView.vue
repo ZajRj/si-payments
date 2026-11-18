@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { listAreas, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
 import { createProject, listProjects, SCOPE_LABELS, updateProject, type Project, type Scope } from '@/api/projects';
 import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+import ProjectDetailView from '@/views/ProjectDetailView.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 import { formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
+const route = useRoute();
+
+// El proyecto abierto vive en la URL (?id=), igual que en solicitudes de pago.
+const detailId = computed(() => {
+  const id = Number(route.query.id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
 const canManage = computed(() => auth.can(PERMISSIONS.PROJECTS_MANAGE));
 
 const projects = ref<Project[]>([]);
@@ -102,6 +111,8 @@ onMounted(load);
 </script>
 
 <template>
+  <ProjectDetailView v-if="detailId" :id="detailId" />
+  <template v-else>
   <div class="page-header">
     <h1>Proyectos</h1>
     <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">Nuevo proyecto</button>
@@ -171,7 +182,9 @@ onMounted(load);
       </thead>
       <tbody>
         <tr v-for="project in projects" :key="project.id">
-          <td class="nowrap">{{ project.code }}</td>
+          <td class="nowrap">
+            <RouterLink :to="{ name: 'projects', query: { id: project.id } }">{{ project.code }}</RouterLink>
+          </td>
           <td>{{ project.name }}</td>
           <td>{{ project.area.name }}</td>
           <td>{{ SCOPE_LABELS[project.scope] }}</td>
@@ -192,4 +205,5 @@ onMounted(load);
       </tbody>
     </table>
   </div>
+  </template>
 </template>

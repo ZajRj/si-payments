@@ -7,7 +7,6 @@ import { formatUsd } from '@/lib/money';
 const props = defineProps<{
   rows: BalanceRow[];
   groupBy: GroupBy;
-  selectedId: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -61,8 +60,6 @@ const widthOf = (cents: number) => `${(cents / maxAccrued.value) * 100}%`;
         <button
           type="button"
           class="row"
-          :class="{ 'is-active': selectedId === rowId(row) }"
-          :aria-pressed="selectedId === rowId(row)"
           @click="emit('select', row)"
         >
           <span class="row-main">

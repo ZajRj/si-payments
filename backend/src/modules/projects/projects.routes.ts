@@ -5,7 +5,7 @@ import { idParamSchema } from '../../lib/validation.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { requirePermission } from '../../middleware/authorize.js';
 import { PERMISSIONS } from '../../rbac/permissions.js';
-import { createProject, listProjects, SCOPES, updateProject } from './projects.service.js';
+import { createProject, getProject, listProjects, SCOPES, updateProject } from './projects.service.js';
 
 const createProjectSchema = z.object({
   code: z
@@ -33,6 +33,10 @@ projectsRouter.use(authenticate);
 
 projectsRouter.get('/', requirePermission(PERMISSIONS.PROJECTS_READ), async (req, res) => {
   res.json({ projects: await listProjects(listQuerySchema.parse(req.query)) });
+});
+
+projectsRouter.get('/:id', requirePermission(PERMISSIONS.PROJECTS_READ), async (req, res) => {
+  res.json({ project: await getProject(idParamSchema.parse(req.params.id)) });
 });
 
 projectsRouter.post('/', requirePermission(PERMISSIONS.PROJECTS_MANAGE), async (req, res) => {

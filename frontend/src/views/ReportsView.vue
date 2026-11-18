@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { listAreas, type Area } from '@/api/areas';
 import { errorMessage } from '@/api/http';
 import { listProjects, type Project } from '@/api/projects';
 import {
   getBalances,
   getPaymentsReport,
-  getPersonStatement,
   type BalanceRow,
   type BalancesReport,
   type GroupBy,
   type PaymentsReport,
-  type PersonStatement as PersonStatementData,
 } from '@/api/reports';
 import BalanceList from '@/components/reports/BalanceList.vue';
 import PaymentsLedger from '@/components/reports/PaymentsLedger.vue';
-import PersonStatement from '@/components/reports/PersonStatement.vue';
+import ProjectReportPage from '@/components/reports/ProjectReportPage.vue';
+import PersonStatementPage from '@/components/reports/PersonStatementPage.vue';
 import ReportSummary from '@/components/reports/ReportSummary.vue';
 
 type Lens = 'balances' | 'payments';
@@ -29,10 +29,31 @@ const PRESETS: { value: Preset; label: string }[] = [
   { value: 'custom', label: 'Personalizado' },
 ];
 
+const route = useRoute();
+const router = useRouter();
+
+// La persona abierta a pantalla completa vive en la URL (?id=); la lista queda montada debajo,
+// así al volver se conservan los filtros y la selección.
+const positiveId = (value: unknown) => {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+const personId = computed(() => positiveId(route.query.personaId));
+const projectDetailId = computed(() => positiveId(route.query.proyectoId));
+const detailId = computed(() => personId.value ?? projectDetailId.value);
+
 const lens = ref<Lens>('balances');
 const groupBy = ref<GroupBy>('person');
 const preset = ref<Preset>('all');
-const filters = reactive({ projectId: 0, areaId: 0, from: '', to: '' });
+// Si se llega desde el detalle de una persona, los filtros vuelven en la URL.
+const queryText = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '');
+const filters = reactive({
+  projectId: Number(queryText('projectId')) || 0,
+  areaId: 0,
+  from: queryText('from'),
+  to: queryText('to'),
+});
+if (filters.from || filters.to) preset.value = 'custom';
 
 const projects = ref<Project[]>([]);
 const areas = ref<Area[]>([]);
@@ -42,10 +63,6 @@ const payments = ref<PaymentsReport | null>(null);
 const loading = ref(false);
 const error = ref('');
 
-const selectedPersonId = ref<number | null>(null);
-const statement = ref<PersonStatementData | null>(null);
-const statementLoading = ref(false);
-const statementError = ref('');
 
 const iso = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -85,7 +102,6 @@ function clearFilters() {
 // Evita que una respuesta lenta pise a una más reciente.
 let balancesSeq = 0;
 let paymentsSeq = 0;
-let statementSeq = 0;
 
 async function loadBalances() {
   const seq = ++balancesSeq;
@@ -115,48 +131,34 @@ async function loadPayments() {
   }
 }
 
-async function loadStatement() {
-  if (selectedPersonId.value === null) return;
-  const seq = ++statementSeq;
-  statementLoading.value = true;
-  statementError.value = '';
-  try {
-    const result = await getPersonStatement(selectedPersonId.value, baseFilters());
-    if (seq === statementSeq) statement.value = result;
-  } catch (e) {
-    if (seq === statementSeq) statementError.value = errorMessage(e);
-  } finally {
-    if (seq === statementSeq) statementLoading.value = false;
-  }
-}
-
 function refresh() {
   void loadBalances();
   if (lens.value === 'payments') void loadPayments();
-  void loadStatement();
 }
 
 function selectRow(row: BalanceRow) {
   if (row.person) {
-    selectedPersonId.value = row.person.id;
-    statement.value = null;
-    void loadStatement();
+    // Una persona abre directo su estado de cuenta completo, con los filtros en la URL.
+    void router.push({
+      name: 'reports',
+      query: {
+        personaId: row.person.id,
+        projectId: filters.projectId || undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
+      },
+    });
   } else if (row.project) {
-    // Un proyecto se explora bajando a sus personas.
-    filters.projectId = row.project.id;
-    groupBy.value = 'person';
+    // Un proyecto abre su reporte completo, con el rango de fechas en la URL.
+    void router.push({
+      name: 'reports',
+      query: { proyectoId: row.project.id, from: filters.from || undefined, to: filters.to || undefined },
+    });
   }
-}
-
-function closeStatement() {
-  selectedPersonId.value = null;
-  statement.value = null;
-  statementSeq++;
 }
 
 watch(() => [filters.projectId, filters.areaId, filters.from, filters.to], refresh);
 watch(groupBy, () => {
-  closeStatement();
   void loadBalances();
 });
 watch(lens, (value) => {
@@ -173,11 +175,12 @@ onMounted(async () => {
 });
 
 const totals = computed(() => balances.value?.totals ?? { accruedCents: 0, paidCents: 0, owedCents: 0, accrualCount: 0 });
-const showDetail = computed(() => lens.value === 'balances' && groupBy.value === 'person' && selectedPersonId.value !== null);
 </script>
 
 <template>
-  <div class="rp">
+  <PersonStatementPage v-if="personId" :id="personId" />
+  <ProjectReportPage v-else-if="projectDetailId" :id="projectDetailId" />
+  <div v-show="!detailId" class="rp">
     <header class="rp-head">
       <div>
         <h1>Reportes</h1>
@@ -251,24 +254,12 @@ const showDetail = computed(() => lens.value === 'balances' && groupBy.value ===
           <button type="button" :aria-pressed="groupBy === 'project'" :class="{ on: groupBy === 'project' }" @click="groupBy = 'project'">Por proyecto</button>
         </div>
         <span class="hint-inline">
-          {{ groupBy === 'person' ? 'Selecciona una persona para ver su estado de cuenta.' : 'Selecciona un proyecto para ver sus personas.' }}
+          {{ groupBy === 'person' ? 'Selecciona una persona para abrir su estado de cuenta completo.' : 'Selecciona un proyecto para abrir su reporte completo.' }}
         </span>
       </div>
 
-      <div class="split" :class="{ 'has-detail': showDetail }">
-        <BalanceList
-          v-if="balances"
-          :rows="balances.rows"
-          :group-by="groupBy"
-          :selected-id="selectedPersonId"
-          @select="selectRow"
-        />
-        <p v-else-if="loading" class="loading">Cargando…</p>
-
-        <div v-if="showDetail" class="detail-slot">
-          <PersonStatement :statement="statement" :loading="statementLoading" :error="statementError" @close="closeStatement" />
-        </div>
-      </div>
+      <BalanceList v-if="balances" :rows="balances.rows" :group-by="groupBy" @select="selectRow" />
+      <p v-else-if="loading" class="loading">Cargando…</p>
     </template>
 
     <template v-else>
@@ -397,39 +388,9 @@ const showDetail = computed(() => lens.value === 'balances' && groupBy.value ===
   font-size: 0.85rem;
   color: var(--muted);
 }
-.split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-}
-.split.has-detail {
-  grid-template-columns: minmax(0, 1fr) minmax(24rem, 28rem);
-}
-.detail-slot {
-  position: sticky;
-  top: 1rem;
-}
+
 .loading {
   color: var(--muted);
 }
 
-@media (max-width: 1000px) {
-  .split.has-detail {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  /* En pantallas angostas el estado de cuenta se abre como hoja sobre la lista. */
-  .detail-slot {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    padding: 0.75rem;
-    background: rgb(15 27 42 / 0.45);
-    display: flex;
-  }
-  .detail-slot :deep(.detail) {
-    width: 100%;
-    max-height: none;
-  }
-}
 </style>

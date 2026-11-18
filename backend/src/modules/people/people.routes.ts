@@ -4,7 +4,7 @@ import { idParamSchema, nullableEmailSchema, nullableTextSchema } from '../../li
 import { authenticate } from '../../middleware/authenticate.js';
 import { requirePermission } from '../../middleware/authorize.js';
 import { PERMISSIONS } from '../../rbac/permissions.js';
-import { createPerson, listPeople, updatePerson } from './people.service.js';
+import { createPerson, getPerson, listPeople, updatePerson } from './people.service.js';
 
 // Acepta "v12345678", "V-12.345.678" o "V-012345678" y guarda siempre "V-12345678",
 // para que una misma cédula escrita de dos formas no cree dos personas.
@@ -35,6 +35,10 @@ peopleRouter.use(authenticate);
 
 peopleRouter.get('/', requirePermission(PERMISSIONS.PEOPLE_READ), async (req, res) => {
   res.json({ people: await listPeople(listQuerySchema.parse(req.query)) });
+});
+
+peopleRouter.get('/:id', requirePermission(PERMISSIONS.PEOPLE_READ), async (req, res) => {
+  res.json({ person: await getPerson(idParamSchema.parse(req.params.id)) });
 });
 
 peopleRouter.post('/', requirePermission(PERMISSIONS.PEOPLE_MANAGE), async (req, res) => {

@@ -70,7 +70,7 @@ function query(filters: Record<string, unknown>) {
   return params;
 }
 
-export function listAccruals(filters: AccrualFilters & { page?: number } = {}) {
+export function listAccruals(filters: AccrualFilters & { page?: number; pageSize?: number } = {}) {
   return http<AccrualPage>(`/accruals?${query(filters)}`);
 }
 

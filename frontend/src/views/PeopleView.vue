@@ -1,14 +1,23 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { createPerson, listPeople, updatePerson, type Person } from '@/api/people';
 import AppModal from '@/components/AppModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+import PersonDetailView from '@/views/PersonDetailView.vue';
 import { activeTone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
+const route = useRoute();
+
+// La persona abierta vive en la URL (?id=), igual que en proyectos y solicitudes.
+const detailId = computed(() => {
+  const id = Number(route.query.id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
 const canManage = computed(() => auth.can(PERMISSIONS.PEOPLE_MANAGE));
 
 const people = ref<Person[]>([]);
@@ -96,6 +105,8 @@ onMounted(load);
 </script>
 
 <template>
+  <PersonDetailView v-if="detailId" :id="detailId" />
+  <template v-else>
   <div class="page-header">
     <h1>Personas</h1>
     <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">Nueva persona</button>
@@ -160,7 +171,7 @@ onMounted(load);
       <tbody>
         <tr v-for="person in people" :key="person.id">
           <td class="nowrap">{{ person.idNumber }}</td>
-          <td>{{ person.name }}</td>
+          <td><RouterLink :to="{ name: 'people', query: { id: person.id } }">{{ person.name }}</RouterLink></td>
           <td>{{ person.phone ?? '—' }}</td>
           <td>{{ person.email ?? '—' }}</td>
           <td><StatusBadge :label="person.active ? 'Activa' : 'Inactiva'" :tone="activeTone(person.active)" /></td>
@@ -174,4 +185,5 @@ onMounted(load);
       </tbody>
     </table>
   </div>
+  </template>
 </template>
