@@ -122,21 +122,17 @@ describe('proyectos', () => {
     await generator.patch(`/api/projects/${projectId}`).send({ endDate: '2026-10-31' }).expect(200);
   });
 
-  it('genera el código a partir del área y no deja editarlo', async () => {
-    const preview = await generator.get('/api/projects/next-code').query({ areaId: physicsId }).expect(200);
-    expect(preview.body.code).toMatch(/^FIS-\d{3}$/);
+  it('genera un código aleatorio con el prefijo del área y no deja editarlo', async () => {
+    const data = { name: 'Código automático', areaId: physicsId, scope: 'INTERNAL', startDate: '2026-01-01', endDate: '2026-12-31' };
+    const first = await generator.post('/api/projects').send(data).expect(201);
+    const second = await generator.post('/api/projects').send(data).expect(201);
 
-    const res = await generator
-      .post('/api/projects')
-      .send({ name: 'Código automático', areaId: physicsId, scope: 'INTERNAL', startDate: '2026-01-01', endDate: '2026-12-31' })
-      .expect(201);
-    expect(res.body.project.code).toBe(preview.body.code);
+    // Prefijo del área y 4 caracteres sin 0, O, 1, I ni L.
+    expect(first.body.project.code).toMatch(/^FIS-[A-HJKMNP-Z2-9]{4}$/);
+    expect(second.body.project.code).toMatch(/^FIS-[A-HJKMNP-Z2-9]{4}$/);
+    expect(second.body.project.code).not.toBe(first.body.project.code);
 
-    const next = await generator.get('/api/projects/next-code').query({ areaId: physicsId }).expect(200);
-    expect(Number(next.body.code.slice(4))).toBe(Number(res.body.project.code.slice(4)) + 1);
-
-    await generator.patch(`/api/projects/${res.body.project.id}`).send({ code: 'OTRO-001' }).expect(400);
-    await receiver.get('/api/projects/next-code').query({ areaId: physicsId }).expect(403);
+    await generator.patch(`/api/projects/${first.body.project.id}`).send({ code: 'OTRO-001' }).expect(400);
   });
 
   it('no crea un proyecto con la vigencia ya terminada, pero sí uno que empezó antes', async () => {
