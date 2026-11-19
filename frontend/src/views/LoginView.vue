@@ -62,11 +62,11 @@ async function submit() {
         </span>
       </div>
       <div>
-        <h2>Cuánto se causó, cuánto se pagó y cuánto se debe.</h2>
+        <h2>Cuánto se calculó, cuánto se pagó y cuánto se debe.</h2>
         <ul class="login-points">
-          <li><AppIcon name="calculator" :size="16" />Causación por período con prorrateo exacto</li>
-          <li><AppIcon name="send" :size="16" />Solicitudes con aprobación y pagos FIFO</li>
-          <li><AppIcon name="history" :size="16" />Registros inmutables y auditoría completa</li>
+          <li><AppIcon name="calculator" :size="16" />Cálculo de lo que se debe en cada período</li>
+          <li><AppIcon name="send" :size="16" />Solicitudes que se aprueban y se pagan, completas o por partes</li>
+          <li><AppIcon name="history" :size="16" />Registros que no se pueden borrar y auditoría completa</li>
         </ul>
       </div>
       <p class="login-footer">Universidad de Carabobo · Sistemas de Información</p>

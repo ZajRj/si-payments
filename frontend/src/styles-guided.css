@@ -339,3 +339,22 @@
   justify-content: flex-end;
   gap: 0.375rem;
 }
+
+/* ---------- Pestañas de una pantalla y su encabezado de ayuda ---------- */
+
+.tab-bar {
+  margin: 1rem 0 0.75rem;
+}
+
+.tab-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.875rem;
+}
+
+.tab-head .hint {
+  margin: 0;
+}

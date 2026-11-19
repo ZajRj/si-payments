@@ -32,6 +32,17 @@ const PRESETS: { value: Preset; label: string }[] = [
 const route = useRoute();
 const router = useRouter();
 
+// La persona abierta a pantalla completa vive en la URL (?id=); la lista queda montada debajo,
+// así al volver se conservan los filtros y la selección.
+const positiveId = (value: unknown) => {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+// Se acepta la dirección /reportes/personas/12 (la que usa la ficha de proyecto) y también ?personaId=12.
+const personId = computed(() => positiveId(route.params.personId ?? route.query.personaId));
+const projectDetailId = computed(() => positiveId(route.params.projectId ?? route.query.proyectoId));
+const detailId = computed(() => personId.value ?? projectDetailId.value);
+
 const lens = ref<Lens>('balances');
 const groupBy = ref<GroupBy>('person');
 const preset = ref<Preset>('all');
@@ -143,68 +154,29 @@ function refresh() {
   if (lens.value === 'payments') void loadPayments();
 }
 
-// La persona o el proyecto elegidos viven en la dirección (/reportes/personas/12, /reportes/proyectos/3):
-// se puede recargar, compartir el enlace o volver con Atrás.
 function selectRow(row: BalanceRow) {
   if (row.person) {
-    void router.push({ name: 'report-person', params: { personId: row.person.id } });
+    // Una persona abre directo su estado de cuenta completo, con los filtros en la URL.
+    void router.push({
+      name: 'reports',
+      query: {
+        personaId: row.person.id,
+        projectId: filters.projectId || undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
+      },
+    });
   } else if (row.project) {
-    // Un proyecto se explora bajando a sus personas.
-    void router.push({ name: 'report-project', params: { projectId: row.project.id } });
+    // Un proyecto abre su reporte completo, con el rango de fechas en la URL.
+    void router.push({
+      name: 'reports',
+      query: { proyectoId: row.project.id, from: filters.from || undefined, to: filters.to || undefined },
+    });
   }
 }
-
-// Vuelve a la vista sin persona: al proyecto filtrado, si lo hay, o a todos.
-function closeStatement() {
-  void router.push(
-    filters.projectId ? { name: 'report-project', params: { projectId: filters.projectId } } : { name: 'reports' },
-  );
-}
-
-function resetStatement() {
-  selectedPersonId.value = null;
-  statement.value = null;
-  statementSeq++;
-}
-
-function applyRoute() {
-  const personId = Number(route.params.personId);
-  const projectId = Number(route.params.projectId);
-  if (route.name === 'report-person' && personId) {
-    groupBy.value = 'person';
-    if (selectedPersonId.value !== personId) {
-      selectedPersonId.value = personId;
-      statement.value = null;
-      void loadStatement();
-    }
-    return;
-  }
-  resetStatement();
-  if (route.name === 'report-project' && projectId) {
-    groupBy.value = 'person';
-    filters.projectId = projectId;
-  } else if (route.name === 'reports' && filters.projectId) {
-    filters.projectId = 0;
-  }
-}
-
-watch(() => route.fullPath, applyRoute);
-
-// Elegir o quitar un proyecto en el filtro también cambia la dirección.
-watch(
-  () => filters.projectId,
-  (projectId) => {
-    if (route.name === 'report-person') return;
-    const current = Number(route.params.projectId) || 0;
-    if (projectId === current) return;
-    void router.replace(projectId ? { name: 'report-project', params: { projectId } } : { name: 'reports' });
-  },
-);
 
 watch(() => [filters.projectId, filters.areaId, filters.from, filters.to], refresh);
-watch(groupBy, (value) => {
-  // Agrupar por proyecto deja de mirar una persona o un proyecto en particular.
-  if (value === 'project' && route.name !== 'reports') void router.push({ name: 'reports' });
+watch(groupBy, () => {
   void loadBalances();
 });
 watch(lens, (value) => {
@@ -217,7 +189,6 @@ onMounted(async () => {
   } catch (e) {
     error.value = errorMessage(e);
   }
-  applyRoute();
   await loadBalances();
 });
 

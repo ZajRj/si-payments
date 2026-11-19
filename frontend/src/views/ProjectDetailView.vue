@@ -211,15 +211,15 @@ watch(projectId, () => void load(), { immediate: true });
 
     <section v-if="canReport" class="card section-gap">
       <h2>Saldo por persona</h2>
-      <p v-if="balanceRows.length === 0" class="hint">Todavía no se ha causado nada en este proyecto.</p>
+      <p v-if="balanceRows.length === 0" class="hint">Todavía no se ha calculado nada en este proyecto.</p>
       <div v-else class="table-wrapper">
         <table>
           <thead>
             <tr>
               <th scope="col">Persona</th>
-              <th scope="col" class="num">Causado</th>
+              <th scope="col" class="num">Calculado</th>
               <th scope="col" class="num">Pagado</th>
-              <th scope="col" class="num">Adeudado</th>
+              <th scope="col" class="num">Falta pagar</th>
               <th scope="col"><span class="sr-only">Acciones</span></th>
             </tr>
           </thead>
