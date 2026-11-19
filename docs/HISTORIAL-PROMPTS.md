@@ -3,15 +3,15 @@
 **Proyecto:** Sistema de Control de Pagos y Asignaciones ("si-payments")  
 **Período cubierto:** 3 de noviembre de 2026 – 18 de noviembre de 2026  
 
-Este documento reconstruye la secuencia cronológica de instrucciones ("prompts") utilizadas durante el desarrollo del sistema, organizadas por hitos y acompañadas de los resultados implementados en cada etapa, incluyendo la resolución de errores surgidos durante las pruebas y el despliegue.
+Este documento reconstruye la secuencia de instrucciones ("prompts") utilizadas durante el desarrollo del sistema, organizadas por hitos y acompañadas de los resultados implementados en cada etapa, incluyendo la resolución de errores surgidos durante las pruebas y el despliegue.
 
 ---
 
-## Hito 1: Génesis del proyecto, autenticación y control de acceso (3 de noviembre de 2026)
+## Hito 1: Génesis del proyecto, autenticación y control de acceso
 
 ### 1.1 Arranque de la arquitectura base (Backend + Frontend + Docker)
 > **Prompt:**  
-> *"Vamos a arrancar el sistema de pagos desde cero. Necesito la estructura completa del proyecto: un backend en Node/Express con TypeScript y Prisma sobre SQLite, y un frontend en Vue 3 con Vite, Pinia y Vue Router. Configura también los Dockerfiles, el "docker-compose.yml" con nginx haciendo proxy a "/api", el manejo de errores HTTP y la estructura de permisos base (RBAC) con pruebas en Vitest."*
+> *"Necesito crear un sistema de pagos desde cero. Necesito la estructura completa del proyecto: un backend en Node/Express con TypeScript y Prisma sobre SQLite, y un frontend en Vue 3 con Vite, Pinia y Vue Router. Configura también los Dockerfiles, el "docker-compose.yml" con nginx haciendo proxy a "/api", el manejo de errores HTTP y la estructura de permisos base (RBAC) con pruebas en Vitest."*
 
 **Resultado:**
 - Se inicializó la estructura monorepo con "backend/" (Express, Prisma, Zod, Vitest) y "frontend/" (Vue 3, Vite, Pinia, Vue Router), además de "docker-compose.yml", ".env.example" y "proyecto.md".
@@ -27,7 +27,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 2: Auditoría, catálogos, personas, proyectos y asignaciones (3 – 5 de noviembre de 2026)
+## Hito 2: Auditoría, catálogos, personas, proyectos y asignaciones
 
 ### 2.1 Bitácora de auditoría, parámetros y catálogos operativos
 > **Prompt:**  
@@ -54,7 +54,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 3: Núcleo financiero, reportes y generación de PDFs (8 – 9 de noviembre de 2026)
+## Hito 3: Núcleo financiero, reportes y generación de PDFs 
 
 ### 3.1 Causación con prorrateo, solicitudes de pago y cajas chicas
 > **Prompt:**  
@@ -88,7 +88,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 4: Rediseño visual, formato de fechas y corrección de errores de carga (8 – 10 de noviembre de 2026)
+## Hito 4: Rediseño visual, formato de fechas y corrección de errores de carga
 
 ### 4.1 Error visual con el modo oscuro del sistema operativo
 > **Prompt:**  
@@ -130,7 +130,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 5: Modales, auditoría visual, despliegue en Docker y Proxy Inverso (10 – 11 de noviembre de 2026)
+## Hito 5: Modales, auditoría visual, despliegue en Docker y Proxy Inverso
 
 ### 5.1 Conversión de formularios a modales, auditoría desplegable y cuadrícula 2x2
 > **Prompt:**  
@@ -165,7 +165,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 6: Navegación por rol, flujo de revisión y endurecimiento de seguridad (15 – 17 de noviembre de 2026)
+## Hito 6: Navegación por rol, flujo de revisión y endurecimiento de seguridad
 
 ### 6.1 Navegación adaptada al rol, badge de pendientes y detalle de solicitud
 > **Prompt:**  
@@ -198,7 +198,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 7: Revisión funcional, lotes desplegables y reportes por dirección (17 de noviembre de 2026)
+## Hito 7: Revisión funcional, lotes desplegables y reportes por dirección
 
 ### 7.1 Correcciones de la revisión funcional
 > **Prompt:**  
@@ -225,7 +225,7 @@ Este documento reconstruye la secuencia cronológica de instrucciones ("prompts"
 
 ---
 
-## Hito 8: Documentación técnica, reportes guiados y unificación terminológica (18 de noviembre de 2026)
+## Hito 8: Documentación técnica, reportes guiados y unificación terminológica
 
 ### 8.1 Documentación técnica completa del proyecto
 > **Prompt:**  
