@@ -227,7 +227,7 @@ onMounted(load);
         <span v-if="editingId === null" class="hint">Hoy o después: no se registran proyectos ya terminados.</span>
       </label>
       <p v-if="isRetroactive" class="notice notice-warning" role="status">
-        El inicio es anterior a hoy: el proyecto se registra de forma retroactiva y sus períodos ya cerrados se podrán causar.
+        El inicio es anterior a hoy: el proyecto se registra de forma retroactiva y en sus períodos ya cerrados se podrá calcular lo que se debe.
       </p>
       <label v-if="editingId !== null" class="checkbox">
         <input v-model="form.active" type="checkbox" />

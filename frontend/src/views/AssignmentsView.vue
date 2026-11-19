@@ -297,7 +297,7 @@ onMounted(load);
       <p class="notice field-wide">
         <strong>Desde y hasta</strong> son los días en que la persona trabaja en el proyecto y gana su asignación. Los
         <strong>períodos</strong> del grupo de pago son el calendario de corte y pago. Si la persona trabaja solo una parte de
-        un período, cobra la proporción de días (prorrateo).
+        un período, cobra solo la parte que le toca por los días trabajados.
       </p>
       <label class="field">
         Desde (primer día que cobra)
@@ -335,8 +335,8 @@ onMounted(load);
       <template v-if="action.type === 'end'">
         <p class="hint">
           Es el último día en que {{ action.assignment.person.name }} gana esta asignación en el proyecto. Desde el día
-          siguiente ya no se le causa nada; si el fin cae a mitad de un período, ese período se paga en proporción a los
-          días trabajados. No se puede mover a una fecha que cambie días de un período ya causado.
+          siguiente ya no se le calcula nada; si el fin cae a mitad de un período, ese período se paga en proporción a los
+          días trabajados. No se puede mover a una fecha que cambie días de un período que ya se calculó.
         </p>
         <label class="field">
           Último día que cobra
@@ -387,8 +387,8 @@ onMounted(load);
         del {{ formatDate(annulTarget.startDate) }} al {{ formatDate(annulTarget.effectiveEndDate) }}.
       </p>
       <p class="hint">
-        La asignación no se borra: queda registrada como anulada, con tu nombre y el motivo, y deja de causarse. No se puede
-        deshacer. Si ya tiene causaciones vigentes, primero hay que anularlas en Causación.
+        La asignación no se borra: queda registrada como anulada, con tu nombre y el motivo, y deja de calcularse. No se puede
+        deshacer. Si ya tiene pagos calculados, primero hay que anularlos en Cálculo de pagos.
       </p>
       <label class="field field-wide">
         Motivo

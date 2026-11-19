@@ -116,13 +116,13 @@ watch(() => props.id, (id) => void load(id), { immediate: true });
             <dd>{{ openAssignments.length }} <span class="hint">de {{ assignments.length }}</span></dd>
           </div>
           <div>
-            <dt>Compromiso por período</dt>
+            <dt>Cobra por período</dt>
             <dd>{{ formatUsd(currentCommitment) }}</dd>
           </div>
         </template>
         <template v-if="canPayroll">
           <div>
-            <dt>Causado</dt>
+            <dt>Total calculado</dt>
             <dd>{{ accruals ? formatUsd(accruals.totals.amountCents) : '—' }}</dd>
           </div>
           <div>
@@ -130,7 +130,7 @@ watch(() => props.id, (id) => void load(id), { immediate: true });
             <dd>{{ accruals ? formatUsd(accruals.totals.paidCents) : '—' }}</dd>
           </div>
           <div>
-            <dt>Deuda pendiente</dt>
+            <dt>Falta pagarle</dt>
             <dd>{{ accruals ? formatUsd(accruals.totals.pendingCents) : '—' }}</dd>
           </div>
         </template>
@@ -218,7 +218,7 @@ watch(() => props.id, (id) => void load(id), { immediate: true });
       <details class="card fold">
         <summary>
           <AppIcon name="chevron" />
-          Causaciones
+          Detalle de cada cálculo
           <span class="hint">{{ accruals?.total ?? 0 }} en total</span>
         </summary>
         <p v-if="sectionErrors.accruals" class="error" role="alert">{{ sectionErrors.accruals }}</p>
@@ -229,7 +229,7 @@ watch(() => props.id, (id) => void load(id), { immediate: true });
                 <th scope="col">Proyecto</th>
                 <th scope="col">Período</th>
                 <th scope="col">Días</th>
-                <th scope="col" class="num">Causado</th>
+                <th scope="col" class="num">Le tocaba</th>
                 <th scope="col" class="num">Pagado</th>
                 <th scope="col" class="num">Pendiente</th>
                 <th scope="col">Estado</th>
@@ -246,7 +246,7 @@ watch(() => props.id, (id) => void load(id), { immediate: true });
                 <td><StatusBadge :label="ACCRUAL_STATUS_LABELS[accrual.status]" :tone="ACCRUAL_STATUS_TONES[accrual.status]" /></td>
               </tr>
               <tr v-if="accruals.accruals.length === 0">
-                <td colspan="7">Todavía no hay causaciones.</td>
+                <td colspan="7">Todavía no hay nada calculado.</td>
               </tr>
             </tbody>
           </table>

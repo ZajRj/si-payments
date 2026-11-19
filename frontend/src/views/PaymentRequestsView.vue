@@ -263,26 +263,8 @@ async function run(action: () => Promise<PaymentRequestDetail>, success?: (resul
   }
 }
 
-// Enviar cierra el trabajo del Generador sobre la solicitud: se vuelve a la lista con un aviso.
-const listNotice = ref('');
-
-async function submitRequest() {
-  const id = detail.value!.id;
-  await run(() => submitPaymentRequest(id));
-  if (detailError.value) return;
-  listNotice.value = `Solicitud #${id} enviada. Queda a la espera de que el Receptor la apruebe o la rechace.`;
-  await router.push({ name: 'payment-requests', query: listQuery.value });
-}
-
-// El aviso se borra al abrir otra solicitud o crear una.
-watch(detailId, (id) => {
-  if (id !== null) listNotice.value = '';
-});
-
-// Total que se va a entregar con los montos escritos en la tabla.
-const paymentTotal = computed(() =>
-  Object.values(paymentForm.amounts).reduce((sum, text) => sum + (text.trim() ? (parseUsd(text) ?? 0) : 0), 0),
-);
+const readyToClose = computed(() => detail.value?.status === 'APPROVED' && detail.value.outstandingCents === 0);
+const canPay = computed(() => canRegister.value && detail.value?.status === 'APPROVED' && detail.value.outstandingCents > 0);
 
 // ---------- Entrega de dinero ----------
 function fillAll(personId: number, outstandingCents: number) {
@@ -402,7 +384,16 @@ async function confirmDialog() {
   const text = current.text.trim() || null;
 
   if (current.kind === 'deliver') return deliver();
-  if (current.kind === 'send') return run(() => submitPaymentRequest(request.id), () => notify(`Listo: la solicitud #${request.id} fue enviada al Receptor. Ahora hay que esperar su respuesta.`));
+  if (current.kind === 'send') {
+    // Enviar cierra el trabajo del Generador sobre la solicitud: se vuelve a la lista con un aviso.
+    return run(
+      () => submitPaymentRequest(request.id),
+      async () => {
+        notify(`Listo: la solicitud #${request.id} fue enviada al Receptor. Ahora hay que esperar su respuesta.`);
+        await router.push({ name: 'payment-requests', query: listQuery.value });
+      },
+    );
+  }
   if (current.kind === 'approve') return run(() => approvePaymentRequest(request.id, text), () => notify(`Listo: aprobaste la solicitud #${request.id}. Ahora puedes entregar el dinero.`));
   if (current.kind === 'reject') return run(() => rejectPaymentRequest(request.id, text ?? ''), () => notify(`Se rechazó la solicitud #${request.id}. El Generador verá tu motivo.`, { tone: 'info' }));
   if (current.kind === 'close') return run(() => closePaymentRequest(request.id, text), () => notify(`Listo: la solicitud #${request.id} quedó cerrada.`));
@@ -678,41 +669,54 @@ onMounted(async () => {
           <button type="button" class="button" :disabled="plannedTotal === 0" @click="clearAmounts">Borrar</button>
         </div>
       </div>
-      <div class="actions">
-        <template v-if="canCreate">
-          <button
-            v-if="detail.status === 'DRAFT' || detail.status === 'SUBMITTED'"
-            type="button"
-            class="button button-danger"
-            :disabled="busy"
-            @click="prompt = { kind: 'cancel', text: '' }"
-          >
-            Cancelar solicitud
-          </button>
-          <button
-            v-if="detail.status === 'DRAFT'"
-            type="button"
-            class="button button-primary"
-            :disabled="busy"
-            @click="submitRequest"
-          >
-            <AppIcon name="send" :size="16" /> Enviar
-          </button>
-        </template>
-        <template v-if="canDecide && detail.status === 'SUBMITTED'">
-          <button type="button" class="button button-danger" @click="prompt = { kind: 'reject', text: '' }">Rechazar</button>
-          <button type="button" class="button button-primary" @click="prompt = { kind: 'approve', text: '' }">Aprobar</button>
-        </template>
-        <template v-if="canRegister && detail.status === 'APPROVED'">
-          <button
-            type="button"
-            :class="['button', { 'button-primary': readyToClose }]"
-            @click="prompt = { kind: 'close', text: '' }"
-          >
-            {{ readyToClose ? 'Cerrar solicitud' : 'Cerrar con saldo' }}
-          </button>
-          <button v-if="!readyToClose" type="button" class="button button-primary" @click="goToPayments">Ir a entregar</button>
-        </template>
+      <p v-if="canPay" class="hint">
+        Escribe cuánto le entregas a cada persona, o pulsa «Todo». Puede ser menos de lo que se le debe. Si dejas un campo vacío, a esa persona no
+        se le entrega nada ahora.
+      </p>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Persona</th>
+              <th scope="col" class="num">Se pidió</th>
+              <th scope="col" class="num">Ya recibió</th>
+              <th scope="col" class="num">Se le debe</th>
+              <th v-if="canPay" scope="col">Entregar ahora (USD)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="entry in detail.people" :key="entry.person.id">
+              <td>
+                {{ entry.person.name }}
+                <span class="permission-code">{{ entry.person.idNumber }}</span>
+              </td>
+              <td class="num">{{ formatUsd(entry.requestedCents) }}</td>
+              <td class="num">{{ formatUsd(entry.paidCents) }}</td>
+              <td class="num">{{ formatUsd(entry.outstandingCents) }}</td>
+              <td v-if="canPay">
+                <div v-if="entry.outstandingCents > 0" class="pay-cell">
+                  <div class="pay-cell-row">
+                    <span class="money-input">
+                      <span aria-hidden="true">USD</span>
+                      <input
+                        v-model="paymentForm.amounts[entry.person.id]"
+                        inputmode="decimal"
+                        autocomplete="off"
+                        placeholder="0,00"
+                        :aria-label="`Cuánto se le entrega a ${entry.person.name}`"
+                        :aria-invalid="Boolean(rowErrors[entry.person.id])"
+                        @input="delete rowErrors[entry.person.id]"
+                      />
+                    </span>
+                    <button type="button" class="button" @click="fillAll(entry.person.id, entry.outstandingCents)">Todo</button>
+                  </div>
+                  <p v-if="rowErrors[entry.person.id]" class="row-error" role="alert">{{ rowErrors[entry.person.id] }}</p>
+                </div>
+                <StatusBadge v-else label="Ya recibió todo" tone="success" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div v-if="canPay" class="form-row section-gap">
@@ -897,17 +901,22 @@ onMounted(async () => {
       <template v-if="canDecide">Aquí revisas lo que piden, apruebas y entregas el dinero a las personas.</template>
       <template v-else>Aquí le pides dinero al Receptor para pagarle a las personas de un proyecto, y ves cómo va cada pedido.</template>
     </p>
-    <p v-if="listNotice" class="notice notice-success section-gap" role="status">{{ listNotice }}</p>
 
     <div class="filter-bar">
-      <label class="field">
-        Estado
-        <select :value="statusFilter" @change="setStatusFilter(($event.target as HTMLSelectElement).value)">
-          <option v-for="key in filterKeys" :key="key" :value="key">
-            {{ STATUS_FILTERS[key].label }} ({{ filterCount(key) }})
-          </option>
-        </select>
-      </label>
+      <div class="chips" role="group" aria-label="Qué solicitudes ver">
+        <button
+          v-for="key in visibleTabs"
+          :key="key"
+          type="button"
+          class="chip"
+          :class="{ 'chip-mine': key === 'mine' }"
+          :aria-pressed="statusFilter === key"
+          @click="setStatusFilter(key)"
+        >
+          {{ STATUS_FILTERS[key].label }}
+          <span class="chip-count">{{ filterCount(key) }}</span>
+        </button>
+      </div>
       <label class="field">
         Proyecto
         <select v-model.number="filters.projectId">
