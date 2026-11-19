@@ -152,8 +152,8 @@ function openPerson(personId: number) {
             <thead>
               <tr>
                 <th scope="col">Persona</th>
-                <th scope="col" class="num">Causaciones</th>
-                <th scope="col" class="num">Causado</th>
+                <th scope="col" class="num">Cálculos</th>
+                <th scope="col" class="num">Calculado</th>
                 <th scope="col" class="num">Pagado</th>
                 <th scope="col" class="num">Debe</th>
                 <th scope="col" class="num">% pagado</th>
@@ -176,7 +176,7 @@ function openPerson(personId: number) {
                 </td>
               </tr>
               <tr v-if="people.length === 0">
-                <td colspan="7">Sin causaciones en este rango.</td>
+                <td colspan="7">No hay nada calculado en estas fechas.</td>
               </tr>
             </tbody>
           </table>
@@ -217,7 +217,7 @@ function openPerson(personId: number) {
       </section>
 
       <section class="card">
-        <h2>Libro de pagos <span class="hint">{{ payments.payments.length }}</span></h2>
+        <h2>Pagos entregados <span class="hint">{{ payments.payments.length }}</span></h2>
         <p class="hint">
           {{ activePayments.length }} vigentes · {{ formatUsd(receivedCents) }} entregados
           <template v-if="payments.totals.annulledCount"> · {{ payments.totals.annulledCount }} anulados</template>
@@ -289,7 +289,7 @@ function openPerson(personId: number) {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.78rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--muted);
 }
@@ -305,7 +305,7 @@ function openPerson(personId: number) {
 }
 .link {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.9375rem;
   padding: 0.45rem 0.25rem;
   border: 0;
   background: none;

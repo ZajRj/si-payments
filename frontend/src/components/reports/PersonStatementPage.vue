@@ -183,7 +183,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
               <thead>
                 <tr>
                   <th scope="col">Proyecto</th>
-                  <th scope="col" class="num">Causado</th>
+                  <th scope="col" class="num">Le tocaba</th>
                   <th scope="col" class="num">Pagado</th>
                   <th scope="col" class="num">Debe</th>
                   <th scope="col" class="num">% pagado</th>
@@ -202,7 +202,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
                   <td class="num">{{ pct(row.paid, row.accrued) }}</td>
                 </tr>
                 <tr v-if="byProject.length === 0">
-                  <td colspan="5">Sin causaciones en este rango.</td>
+                  <td colspan="5">No hay nada calculado en estas fechas.</td>
                 </tr>
               </tbody>
             </table>
@@ -216,7 +216,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
               <thead>
                 <tr>
                   <th scope="col">Mes (fin del período)</th>
-                  <th scope="col" class="num">Causado</th>
+                  <th scope="col" class="num">Le tocaba</th>
                   <th scope="col" class="num">Pagado</th>
                   <th scope="col" class="num">Debe</th>
                 </tr>
@@ -229,7 +229,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
                   <td class="num" :class="{ owed: row.owed > 0 }">{{ formatUsd(row.owed) }}</td>
                 </tr>
                 <tr v-if="byMonth.length === 0">
-                  <td colspan="4">Sin causaciones en este rango.</td>
+                  <td colspan="4">No hay nada calculado en estas fechas.</td>
                 </tr>
               </tbody>
             </table>
@@ -238,17 +238,17 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
       </div>
 
       <section class="card">
-        <h2>Causaciones <span class="hint">{{ statement.accruals.length }}</span></h2>
+        <h2>Detalle de cada cálculo <span class="hint">{{ statement.accruals.length }}</span></h2>
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
-                <th scope="col">Causación</th>
+                <th scope="col">Cálculo</th>
                 <th scope="col">Proyecto</th>
                 <th scope="col">Grupo de pago</th>
                 <th scope="col">Período</th>
                 <th scope="col">Días</th>
-                <th scope="col" class="num">Causado</th>
+                <th scope="col" class="num">Le tocaba</th>
                 <th scope="col" class="num">Pagado</th>
                 <th scope="col" class="num">Debe</th>
                 <th scope="col">Estado</th>
@@ -267,7 +267,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
                 <td><StatusBadge :label="ACCRUAL_STATUS_LABELS[a.status]" :tone="ACCRUAL_STATUS_TONES[a.status]" /></td>
               </tr>
               <tr v-if="statement.accruals.length === 0">
-                <td colspan="9">Sin causaciones en este rango.</td>
+                <td colspan="9">No hay nada calculado en estas fechas.</td>
               </tr>
             </tbody>
           </table>
@@ -348,7 +348,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.78rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--muted);
 }
@@ -366,7 +366,7 @@ const pct = (paid: number, accrued: number) => (accrued > 0 ? `${Math.round(Math
 }
 .link {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.9375rem;
   padding: 0.45rem 0.25rem;
   border: 0;
   background: none;

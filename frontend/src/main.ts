@@ -6,6 +6,7 @@ import { router } from './router';
 import { useAuthStore } from './stores/auth';
 import { usePendingStore } from './stores/pending';
 import './styles.css';
+import './styles-guided.css';
 
 const app = createApp(App);
 app.use(createPinia());

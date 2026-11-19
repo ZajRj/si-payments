@@ -15,12 +15,15 @@ import {
   type PaymentGroup,
   type Period,
 } from '@/api/payment-groups';
+import AppIcon from '@/components/AppIcon.vue';
 import AppModal from '@/components/AppModal.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+import { formatDate, formatRange } from '@/lib/dates';
 import { activeTone } from '@/lib/status';
+import { notify } from '@/lib/toast';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
-import { formatDate, formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const canManage = computed(() => auth.can(PERMISSIONS.ASSIGNMENTS_MANAGE));
@@ -29,6 +32,8 @@ const groups = ref<PaymentGroup[]>([]);
 const loading = ref(true);
 const error = ref('');
 
+const EVERY: Record<Frequency, string> = { WEEKLY: 'Se paga cada semana', BIWEEKLY: 'Se paga cada quincena', MONTHLY: 'Se paga una vez al mes' };
+
 // Formulario del grupo. El corte se edita como texto porque en el grupo mensual puede quedar vacío.
 const formOpen = ref(false);
 const editingId = ref<number | null>(null);
@@ -36,20 +41,19 @@ const saving = ref(false);
 const formError = ref('');
 const form = reactive({ name: '', frequency: 'BIWEEKLY' as Frequency, cutoff: '15', active: true });
 
-// Períodos del grupo seleccionado.
+// Calendario (períodos) del grupo seleccionado.
 const selected = ref<PaymentGroup | null>(null);
 const periods = ref<Period[]>([]);
 const periodsLoading = ref(false);
 const periodsError = ref('');
 const generating = ref(false);
-// Confirmación en línea para eliminar el último período (sin diálogos nativos del navegador).
 const confirmingRemove = ref(false);
 const generateForm = reactive({ from: '', until: '' });
 
+const lastPeriod = computed(() => periods.value[periods.value.length - 1] ?? null);
 const nextStart = computed(() => {
-  const last = periods.value[periods.value.length - 1];
-  if (!last) return null;
-  const date = new Date(`${last.endDate}T00:00:00Z`);
+  if (!lastPeriod.value) return null;
+  const date = new Date(`${lastPeriod.value.endDate}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString().slice(0, 10);
 });
@@ -100,8 +104,10 @@ async function save() {
   try {
     if (editingId.value === null) {
       await createPaymentGroup(payload);
+      notify(`Listo: se creó el grupo «${form.name}». Ahora agrégale los períodos del calendario.`);
     } else {
       await updatePaymentGroup(editingId.value, { ...payload, active: form.active });
+      notify(`Listo: se guardaron los cambios de «${form.name}».`);
     }
     formOpen.value = false;
     await load();
@@ -120,6 +126,7 @@ async function showPeriods(group: PaymentGroup) {
   confirmingRemove.value = false;
   Object.assign(generateForm, { from: '', until: '' });
   await loadPeriods();
+  document.getElementById('calendar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function loadPeriods() {
@@ -135,12 +142,14 @@ async function loadPeriods() {
   }
 }
 
-async function runPeriodAction(action: () => Promise<unknown>) {
+async function runPeriodAction(action: () => Promise<unknown>, success: string) {
   generating.value = true;
   periodsError.value = '';
   try {
     await action();
     await Promise.all([loadPeriods(), load()]);
+    confirmingRemove.value = false;
+    notify(success);
   } catch (e) {
     periodsError.value = errorMessage(e);
   } finally {
@@ -151,14 +160,16 @@ async function runPeriodAction(action: () => Promise<unknown>) {
 function generate() {
   const group = selected.value!;
   const from = periods.value.length === 0 ? generateForm.from : undefined;
-  return runPeriodAction(() => generatePeriods(group.id, { from, until: generateForm.until }));
+  return runPeriodAction(
+    () => generatePeriods(group.id, { from, until: generateForm.until }),
+    `Listo: el calendario de «${group.name}» ahora llega hasta el ${formatDate(generateForm.until)}.`,
+  );
 }
 
 function removeLast() {
-  const last = periods.value[periods.value.length - 1];
-  if (!last) return;
-  confirmingRemove.value = false;
-  return runPeriodAction(() => deleteLastPeriod(selected.value!.id));
+  if (!lastPeriod.value) return;
+  const label = formatRange(lastPeriod.value.startDate, lastPeriod.value.endDate);
+  return runPeriodAction(() => deleteLastPeriod(selected.value!.id), `Se quitó el último período (${label}) del calendario.`);
 }
 
 onMounted(load);
@@ -167,55 +178,53 @@ onMounted(load);
 <template>
   <div class="page-header">
     <h1>Grupos de pago</h1>
-    <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">
-      Nuevo grupo
-    </button>
+    <button v-if="canManage" type="button" class="button button-primary" @click="openCreate">Crear un grupo de pago</button>
   </div>
-  <p class="hint">Periodicidad y fecha de corte de cada grupo, y los períodos que se causan. Cada asignación pertenece a un grupo.</p>
+  <p class="hint">
+    Un grupo de pago define <strong>cada cuánto se les paga</strong> a las personas (cada semana, cada quincena o cada mes) y qué día se cierra
+    cada período. A cada asignación se le elige uno de estos grupos.
+  </p>
 
-  <AppModal
-    :open="formOpen"
-    :title="editingId === null ? 'Nuevo grupo de pago' : 'Editar grupo de pago'"
-    @close="formOpen = false"
-  >
+  <!-- Crear / editar -->
+  <AppModal :open="formOpen" :title="editingId === null ? 'Crear un grupo de pago' : 'Editar el grupo de pago'" @close="formOpen = false">
     <form class="form-grid" @submit.prevent="save">
       <label class="field">
-        Nombre
-        <input v-model="form.name" required maxlength="80" />
+        Nombre del grupo
+        <input v-model="form.name" required maxlength="80" placeholder="Ej.: Personal quincenal" />
       </label>
       <label class="field">
-        Periodicidad
+        ¿Cada cuánto se paga?
         <select v-model="form.frequency" @change="onFrequencyChange">
-          <option v-for="(label, value) in FREQUENCY_LABELS" :key="value" :value="value">{{ label }}</option>
+          <option v-for="(label, value) in FREQUENCY_LABELS" :key="value" :value="value">
+            {{ { WEEKLY: 'Cada semana', BIWEEKLY: 'Cada quincena', MONTHLY: 'Cada mes' }[value] }}
+          </option>
         </select>
       </label>
       <label v-if="form.frequency === 'WEEKLY'" class="field">
-        Día de cierre
+        ¿Qué día de la semana termina el período?
         <select v-model="form.cutoff">
           <option v-for="(day, index) in WEEKDAYS" :key="index" :value="String(index)">{{ day }}</option>
         </select>
       </label>
       <label v-else-if="form.frequency === 'BIWEEKLY'" class="field">
-        Cierre de la primera quincena (día)
+        ¿Qué día del mes termina la primera quincena?
         <input v-model="form.cutoff" type="number" min="1" max="27" required />
-        <span class="hint">La segunda quincena cierra a fin de mes.</span>
+        <span class="hint">Normalmente es el 15. La segunda quincena siempre termina a fin de mes.</span>
       </label>
       <label v-else class="field">
-        Día de cierre
+        ¿Qué día del mes termina el período?
         <input v-model="form.cutoff" type="number" min="1" max="28" placeholder="Fin de mes" />
-        <span class="hint">Déjalo vacío para cerrar el último día de cada mes.</span>
+        <span class="hint">Si lo dejas vacío, cada período termina el último día del mes.</span>
       </label>
       <label v-if="editingId !== null" class="checkbox">
         <input v-model="form.active" type="checkbox" />
-        Grupo activo
+        El grupo está en uso
       </label>
-      <p v-if="editingId !== null" class="hint">
-        Un cambio de periodicidad o de corte solo afecta a los períodos que se generen después.
-      </p>
+      <p v-if="editingId !== null" class="hint">Si cambias esto, solo afecta a los períodos que se agreguen después. Los que ya existen no cambian.</p>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-      <div class="actions">
-        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      <div class="confirm-actions">
+        <button type="button" class="button" @click="formOpen = false">Volver</button>
+        <button type="submit" class="button button-primary" :disabled="saving">{{ saving ? 'Un momento…' : 'Guardar' }}</button>
       </div>
     </form>
   </AppModal>
@@ -227,8 +236,8 @@ onMounted(load);
       <thead>
         <tr>
           <th scope="col">Nombre</th>
-          <th scope="col">Periodicidad</th>
-          <th scope="col">Corte</th>
+          <th scope="col">Cada cuánto se paga</th>
+          <th scope="col">Cierre</th>
           <th scope="col">Períodos</th>
           <th scope="col">Estado</th>
           <th scope="col"><span class="sr-only">Acciones</span></th>
@@ -237,80 +246,79 @@ onMounted(load);
       <tbody>
         <tr v-for="group in groups" :key="group.id">
           <td>{{ group.name }}</td>
-          <td>{{ FREQUENCY_LABELS[group.frequency] }}</td>
+          <td>{{ EVERY[group.frequency] }}</td>
           <td>{{ describeCutoff(group) }}</td>
           <td>{{ group.periodCount }}</td>
-          <td><StatusBadge :label="group.active ? 'Activo' : 'Inactivo'" :tone="activeTone(group.active)" /></td>
+          <td><StatusBadge :label="group.active ? 'En uso' : 'Fuera de uso'" :tone="activeTone(group.active)" /></td>
           <td>
-            <div class="actions">
-              <button type="button" class="button" @click="showPeriods(group)">Períodos</button>
+            <div class="table-actions">
+              <button type="button" class="button" :class="{ 'button-primary': selected?.id === group.id }" @click="showPeriods(group)">Ver calendario</button>
               <button v-if="canManage" type="button" class="button" @click="openEdit(group)">Editar</button>
             </div>
           </td>
+        </tr>
+        <tr v-if="groups.length === 0">
+          <td colspan="6">Todavía no hay grupos de pago. Crea uno para poder asignar personas a proyectos.</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <section v-if="selected" class="card section-gap">
+  <!-- Calendario del grupo -->
+  <section v-if="selected" id="calendar" class="card section-gap">
     <div class="page-header">
-      <h2>Períodos de «{{ selected.name }}»</h2>
-      <button type="button" class="button" @click="selected = null; confirmingRemove = false">Cerrar</button>
+      <div>
+        <h2>Calendario de «{{ selected.name }}»</h2>
+        <p class="hint">Son los períodos de pago de este grupo. Un período se puede calcular cuando ya terminó.</p>
+      </div>
+      <button type="button" class="button" @click="selected = null; confirmingRemove = false">Cerrar el calendario</button>
     </div>
 
-    <form v-if="canManage && selected.active" class="form-grid" @submit.prevent="generate">
+    <form v-if="canManage && selected.active" class="calendar-form" @submit.prevent="generate">
+      <h3>Agregar períodos al calendario</h3>
       <label v-if="periods.length === 0" class="field">
-        Inicio del primer período
+        ¿Desde qué día empieza el primer período?
         <input v-model="generateForm.from" type="date" required />
       </label>
-      <p v-else class="hint">La generación continúa desde el {{ formatDate(nextStart) }}.</p>
+      <p v-else class="hint">Los períodos nuevos empiezan el {{ formatDate(nextStart) }}, justo después del último.</p>
       <label class="field">
-        Generar hasta
+        ¿Hasta qué fecha quieres tener períodos?
         <input v-model="generateForm.until" type="date" required />
+        <span class="hint">Por ejemplo, pon el 31 de diciembre para tener todo el año.</span>
       </label>
       <div class="actions">
-        <button type="submit" class="button button-primary" :disabled="generating">Generar períodos</button>
-        <button
-          v-if="periods.length > 0"
-          type="button"
-          class="button"
-          :disabled="generating"
-          @click="confirmingRemove = true"
-        >
-          Eliminar último período
+        <button type="submit" class="button button-primary" :disabled="generating">{{ generating ? 'Un momento…' : 'Agregar períodos' }}</button>
+        <button v-if="periods.length > 0" type="button" class="button" :disabled="generating" @click="confirmingRemove = true">
+          Quitar el último período
         </button>
       </div>
     </form>
 
-    <AppModal
-      :open="confirmingRemove && periods.length > 0"
-      title="Eliminar último período"
+    <ConfirmDialog
+      :open="confirmingRemove && Boolean(lastPeriod)"
+      title="¿Quitar el último período?"
+      confirm-label="Sí, quitarlo"
+      danger
+      :busy="generating"
+      :error="periodsError"
       @close="confirmingRemove = false"
+      @confirm="removeLast"
     >
-      <div v-if="periods.length > 0" class="form-grid">
-        <p class="hint">
-          ¿Eliminar el período
-          <strong>{{ formatRange(periods[periods.length - 1]!.startDate, periods[periods.length - 1]!.endDate) }}</strong>
-          del grupo «{{ selected.name }}»?
-        </p>
-        <div class="actions">
-          <button type="button" class="button" @click="confirmingRemove = false">Cancelar</button>
-          <button type="button" class="button button-primary" :disabled="generating" @click="removeLast">
-            Sí, eliminar
-          </button>
-        </div>
-      </div>
-    </AppModal>
+      <p v-if="lastPeriod" class="hint">
+        Se quitará el período <strong>{{ formatRange(lastPeriod.startDate, lastPeriod.endDate) }}</strong> del calendario de «{{ selected.name }}».
+      </p>
+      <p>Solo se puede quitar si todavía no se calculó nada de ese período.</p>
+    </ConfirmDialog>
 
-    <p v-if="periodsError" class="error" role="alert">{{ periodsError }}</p>
-    <p v-else-if="periodsLoading">Cargando…</p>
-    <p v-else-if="periods.length === 0" class="hint">Este grupo todavía no tiene períodos.</p>
+    <p v-if="periodsError && !confirmingRemove" class="error" role="alert">{{ periodsError }}</p>
+    <p v-else-if="periodsLoading" class="hint">Cargando…</p>
+    <p v-else-if="periods.length === 0" class="empty-inline">Este grupo todavía no tiene períodos. Agrega los primeros arriba.</p>
     <div v-else class="table-wrapper section-gap">
       <table>
         <thead>
           <tr>
-            <th scope="col">Inicio</th>
-            <th scope="col">Fin</th>
+            <th scope="col">Empieza</th>
+            <th scope="col">Termina</th>
             <th scope="col">Días</th>
           </tr>
         </thead>

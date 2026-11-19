@@ -70,7 +70,7 @@ export const router = createRouter({
           path: 'causacion',
           name: 'accruals',
           component: () => import('@/views/AccrualsView.vue'),
-          meta: { navLabel: 'Causación', navIcon: 'calculator', navGroup: 'Pagos', permission: PERMISSIONS.PAYROLL_READ },
+          meta: { navLabel: 'Cálculo de pagos', navIcon: 'calculator', navGroup: 'Pagos', permission: PERMISSIONS.PAYROLL_READ },
         },
         {
           path: 'solicitudes-de-pago',

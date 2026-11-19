@@ -22,11 +22,11 @@ type Lens = 'balances' | 'payments';
 type Preset = 'all' | 'month' | 'lastMonth' | 'year' | 'custom';
 
 const PRESETS: { value: Preset; label: string }[] = [
-  { value: 'all', label: 'Todo' },
+  { value: 'all', label: 'Todas las fechas' },
   { value: 'month', label: 'Este mes' },
   { value: 'lastMonth', label: 'Mes pasado' },
   { value: 'year', label: 'Este año' },
-  { value: 'custom', label: 'Personalizado' },
+  { value: 'custom', label: 'Elegir fechas' },
 ];
 
 const route = useRoute();
@@ -97,6 +97,23 @@ function clearFilters() {
   filters.projectId = 0;
   filters.areaId = 0;
   applyPreset('all');
+}
+
+// Las tres preguntas que se pueden hacer; cada una elige el tipo de reporte y cómo se agrupa.
+type Question = 'person' | 'project' | 'payments';
+const QUESTIONS: { value: Question; short: string; title: string; sub: string }[] = [
+  { value: 'person', short: 'Deuda por persona', title: '¿Cuánto se le debe a cada persona?', sub: 'Una lista de personas con lo que se les debe. Elige una para ver su estado de cuenta.' },
+  { value: 'project', short: 'Deuda por proyecto', title: '¿Cuánto falta pagar en cada proyecto?', sub: 'Una lista de proyectos con lo que se debe en cada uno.' },
+  { value: 'payments', short: 'Pagos entregados', title: '¿Qué pagos ya se hicieron?', sub: 'Todas las entregas de dinero, con su fecha y su recibo.' },
+];
+const question = computed<Question>(() => (lens.value === 'payments' ? 'payments' : groupBy.value));
+function setQuestion(value: Question) {
+  if (value === 'payments') {
+    lens.value = 'payments';
+    return;
+  }
+  lens.value = 'balances';
+  groupBy.value = value;
 }
 
 // Evita que una respuesta lenta pise a una más reciente.
@@ -180,24 +197,21 @@ const totals = computed(() => balances.value?.totals ?? { accruedCents: 0, paidC
 <template>
   <PersonStatementPage v-if="personId" :id="personId" />
   <ProjectReportPage v-else-if="projectDetailId" :id="projectDetailId" />
-  <div v-show="!detailId" class="rp">
-    <header class="rp-head">
-      <div>
-        <h1>Reportes</h1>
-        <p class="rp-sub">Lo causado, lo pagado y lo que se adeuda, por persona, proyecto y fecha.</p>
-      </div>
-      <div class="seg seg-lg" role="group" aria-label="Vista del reporte">
-        <button type="button" :aria-pressed="lens === 'balances'" :class="{ on: lens === 'balances' }" @click="lens = 'balances'">
-          Saldos
-        </button>
-        <button type="button" :aria-pressed="lens === 'payments'" :class="{ on: lens === 'payments' }" @click="lens = 'payments'">
-          Libro de pagos
-        </button>
-      </div>
-    </header>
+  <div v-show="!detailId">
+    <div class="page-header">
+      <h1>Reportes</h1>
+    </div>
+    <p class="hint">Aquí consultas cuánto se debe y cuánto ya se pagó. Primero elige qué quieres saber.</p>
 
-    <section class="filters" aria-label="Filtros">
-      <div class="chips" role="group" aria-label="Período">
+    <div class="chips section-gap" role="group" aria-label="¿Qué quieres saber?">
+      <button v-for="item in QUESTIONS" :key="item.value" type="button" class="chip" :aria-pressed="question === item.value" @click="setQuestion(item.value)">
+        {{ item.short }}
+      </button>
+    </div>
+    <p class="hint">{{ QUESTIONS.find((item) => item.value === question)?.sub }}</p>
+
+    <section class="card" aria-label="Filtros">
+      <div class="chips" role="group" aria-label="Fechas">
         <button
           v-for="item in PRESETS"
           :key="item.value"
@@ -209,188 +223,64 @@ const totals = computed(() => balances.value?.totals ?? { accruedCents: 0, paidC
           {{ item.label }}
         </button>
       </div>
-      <div class="filter-fields">
-        <label v-if="preset === 'custom'" class="f">
-          <span>Desde</span>
+      <div class="form-row section-gap">
+        <label v-if="preset === 'custom'" class="field">
+          Desde
           <input v-model="filters.from" type="date" />
         </label>
-        <label v-if="preset === 'custom'" class="f">
-          <span>Hasta</span>
+        <label v-if="preset === 'custom'" class="field">
+          Hasta
           <input v-model="filters.to" type="date" />
         </label>
-        <label class="f">
-          <span>Proyecto</span>
+        <label class="field">
+          Proyecto
           <select v-model.number="filters.projectId">
             <option :value="0">Todos</option>
             <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }} · {{ project.name }}</option>
           </select>
         </label>
-        <label class="f">
-          <span>Área</span>
+        <label class="field">
+          Área
           <select v-model.number="filters.areaId">
             <option :value="0">Todas</option>
             <option v-for="area in areas" :key="area.id" :value="area.id">{{ area.name }}</option>
           </select>
         </label>
-        <button v-if="hasActiveFilters" type="button" class="link" @click="clearFilters">Limpiar filtros</button>
       </div>
-      <p class="note">
-        {{
-          lens === 'payments'
-            ? 'Las fechas filtran por el día de entrega del pago.'
-            : 'Las causaciones se filtran por la fecha de fin de su período; lo pagado es lo aplicado a ellas, sin importar la fecha del pago.'
-        }}
-      </p>
+      <div class="actions section-gap">
+        <button v-if="hasActiveFilters" type="button" class="button" @click="clearFilters">Quitar filtros</button>
+        <details class="dates-help">
+          <summary>¿Cómo se cuentan las fechas?</summary>
+          <p class="hint">
+            {{
+              lens === 'payments'
+                ? 'Las fechas se refieren al día en que se entregó el dinero.'
+                : 'Cada cálculo se ubica según el día en que terminó su período. Lo pagado es lo que ya se entregó para ese cálculo, sin importar qué día se pagó.'
+            }}
+          </p>
+        </details>
+      </div>
     </section>
 
-    <p v-if="error" class="err" role="alert">{{ error }}</p>
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
 
     <ReportSummary v-if="balances" v-bind="totals" :class="{ 'is-loading': loading }" />
 
     <template v-if="lens === 'balances'">
-      <div class="subbar">
-        <div class="seg" role="group" aria-label="Agrupar por">
-          <button type="button" :aria-pressed="groupBy === 'person'" :class="{ on: groupBy === 'person' }" @click="groupBy = 'person'">Por persona</button>
-          <button type="button" :aria-pressed="groupBy === 'project'" :class="{ on: groupBy === 'project' }" @click="groupBy = 'project'">Por proyecto</button>
-        </div>
-        <span class="hint-inline">
-          {{ groupBy === 'person' ? 'Selecciona una persona para abrir su estado de cuenta completo.' : 'Selecciona un proyecto para abrir su reporte completo.' }}
-        </span>
-      </div>
-
       <BalanceList v-if="balances" :rows="balances.rows" :group-by="groupBy" @select="selectRow" />
-      <p v-else-if="loading" class="loading">Cargando…</p>
+      <p v-else-if="loading" class="hint">Cargando…</p>
     </template>
 
     <template v-else>
       <PaymentsLedger v-if="payments" :report="payments" />
-      <p v-else-if="loading" class="loading">Cargando…</p>
+      <p v-else-if="loading" class="hint">Cargando…</p>
     </template>
   </div>
 </template>
 
 <style scoped>
-.rp {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.rp-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.rp-sub {
-  margin: 0.25rem 0 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: var(--surface);
-}
-.seg button {
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 0.4rem 0.85rem;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.seg button + button {
-  border-left: 1px solid var(--border-strong);
-}
-.seg button.on {
-  background: var(--accent);
-  color: var(--accent-text);
-  font-weight: 650;
-}
-.seg-lg button {
-  padding: 0.55rem 1.1rem;
-  font-size: 0.95rem;
-}
-
-.filters {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.9rem 1rem;
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.filter-fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-}
-.f {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-.f select,
-.f input {
-  font: inherit;
-  font-weight: 400;
-  min-width: 11rem;
-  max-width: 18rem;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-}
-.link {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.45rem 0.25rem;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  cursor: pointer;
-  text-decoration: underline;
-}
-.note {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-.err {
-  margin: 0;
-  padding: 0.7rem 1rem;
-  border-radius: var(--radius-sm);
-  background: var(--danger-soft);
-  color: var(--danger);
-}
 .is-loading {
   opacity: 0.6;
   transition: opacity var(--ease);
 }
-.subbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-}
-.hint-inline {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.loading {
-  color: var(--muted);
-}
-
 </style>

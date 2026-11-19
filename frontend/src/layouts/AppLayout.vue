@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppIcon from '@/components/AppIcon.vue';
 import CommandPalette from '@/components/CommandPalette.vue';
+import ToastHost from '@/components/ToastHost.vue';
 import { useAuthStore } from '@/stores/auth';
 import { usePendingStore } from '@/stores/pending';
 
@@ -132,6 +133,7 @@ async function logout() {
     <main class="content">
       <RouterView />
     </main>
+    <ToastHost />
 
     <CommandPalette :open="paletteOpen" :nav-items="paletteItems" @close="paletteOpen = false" />
   </div>
