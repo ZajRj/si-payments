@@ -12,7 +12,11 @@ const DEMO_USERS: { email: string; name: string; role: RoleCode }[] = [
   { email: 'receptor@example.com', name: 'Rosa Gerente', role: ROLE_CODES.PAYROLL_RECEIVER },
 ];
 
-const AREAS = ['Física', 'Química', 'Biología'];
+const AREAS: { name: string; description: string }[] = [
+  { name: 'Física', description: 'Proyectos de física: óptica, mecánica, sismología, instrumentación y mediciones.' },
+  { name: 'Química', description: 'Proyectos de química: síntesis, análisis de materiales y procesos de laboratorio.' },
+  { name: 'Biología', description: 'Proyectos de biología: genómica, ecología, microbiología y estudios de organismos vivos.' },
+];
 
 const DEMO_PAYMENT_GROUPS: { name: string; frequency: Frequency; cutoffDay: number | null }[] = [
   { name: 'Semanal (cierre viernes)', frequency: 'WEEKLY', cutoffDay: 5 },
@@ -99,8 +103,8 @@ async function syncRbac() {
 // Las áreas y los parámetros solo se crean si faltan, para no revertir cambios hechos desde la aplicación.
 // El seed no escribe en audit_log: no hay un usuario que haga el cambio.
 async function seedCatalogs() {
-  for (const name of AREAS) {
-    await prisma.area.upsert({ where: { name }, update: {}, create: { name } });
+  for (const { name, description } of AREAS) {
+    await prisma.area.upsert({ where: { name }, update: {}, create: { name, description } });
   }
 
   for (const [key, { defaultValue }] of Object.entries(SETTINGS)) {

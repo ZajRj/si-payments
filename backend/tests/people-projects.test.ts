@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { prisma } from '../src/lib/prisma.js';
 import { loginAs } from './helpers.js';
 
 type Agent = Awaited<ReturnType<typeof loginAs>>;
@@ -120,6 +121,32 @@ describe('proyectos', () => {
     await generator.patch(`/api/projects/${projectId}`).send({ startDate: '2026-04-01' }).expect(409);
     await generator.patch(`/api/projects/${projectId}`).send({ endDate: '2026-10-31' }).expect(200);
   });
+
+  it('genera un código aleatorio con el prefijo del área y no deja editarlo', async () => {
+    const data = { name: 'Código automático', areaId: physicsId, scope: 'INTERNAL', startDate: '2026-01-01', endDate: '2026-12-31' };
+    const first = await generator.post('/api/projects').send(data).expect(201);
+    const second = await generator.post('/api/projects').send(data).expect(201);
+
+    // Prefijo del área y 4 caracteres sin 0, O, 1, I ni L.
+    expect(first.body.project.code).toMatch(/^FIS-[A-HJKMNP-Z2-9]{4}$/);
+    expect(second.body.project.code).toMatch(/^FIS-[A-HJKMNP-Z2-9]{4}$/);
+    expect(second.body.project.code).not.toBe(first.body.project.code);
+
+    await generator.patch(`/api/projects/${first.body.project.id}`).send({ code: 'OTRO-001' }).expect(400);
+  });
+
+  it('no crea un proyecto con la vigencia ya terminada, pero sí uno que empezó antes', async () => {
+    const base = { name: 'Vigencia', areaId: physicsId, scope: 'INTERNAL' };
+    const ended = await generator.post('/api/projects').send({ ...base, startDate: '2020-01-01', endDate: '2020-12-31' }).expect(400);
+    expect(ended.body.error.code).toBe('PROJECT_ALREADY_ENDED');
+
+    await generator.post('/api/projects').send({ ...base, startDate: '2020-01-01', endDate: '2030-12-31' }).expect(201);
+  });
+
+  it('un proyecto no se borra ni con SQL directo', async () => {
+    const projectId = await createProject('TST-BORRAR');
+    await expect(prisma.project.delete({ where: { id: projectId } })).rejects.toThrow();
+  });
 });
 
 describe('asignaciones', () => {
@@ -222,6 +249,39 @@ describe('asignaciones', () => {
     // Y no se puede reabrir con la persona y el proyecto inactivos, pero sí acortar en el pasado.
     await generator.patch(`/api/assignments/${assignmentId}`).send({ endDate: null }).expect(409);
     await generator.patch(`/api/assignments/${assignmentId}`).send({ endDate: '2026-01-15' }).expect(200);
+  });
+
+  it('se anula con motivo, no se borra y deja de contar', async () => {
+    const projectId = await createProject('TST-ANU');
+    const personId = await createPerson('V-30888111');
+    const base = { personId, projectId, paymentGroupId: biweeklyId, amountCents: 10_000, startDate: '2026-12-01' };
+    const created = await generator.post('/api/assignments').send(base).expect(201);
+    const id = created.body.assignment.id;
+
+    await receiver.post(`/api/assignments/${id}/annul`).send({ reason: 'No le corresponde' }).expect(403);
+    await generator.post(`/api/assignments/${id}/annul`).send({ reason: '' }).expect(400);
+
+    const res = await generator.post(`/api/assignments/${id}/annul`).send({ reason: 'Registrada por error' }).expect(200);
+    expect(res.body.assignment).toMatchObject({ annulmentReason: 'Registrada por error', annulledBy: { name: 'Gabriel Coordinador' } });
+    expect(res.body.assignment.annulledAt).not.toBeNull();
+
+    // Anulada ya no se modifica ni se vuelve a anular.
+    await generator.post(`/api/assignments/${id}/annul`).send({ reason: 'Otra vez' }).expect(409);
+    await generator.patch(`/api/assignments/${id}`).send({ endDate: '2026-12-15' }).expect(409);
+    await generator.post(`/api/assignments/${id}/amount-change`).send({ effectiveDate: '2026-12-10', amountCents: 20_000 }).expect(409);
+
+    // No ocupa días: se puede registrar otra en su lugar, y no cuenta como vigente.
+    await generator.post('/api/assignments').send(base).expect(201);
+    const open = await generator.get('/api/assignments').query({ projectId, openOnly: 'true' }).expect(200);
+    expect(open.body.assignments.map((a: { id: number }) => a.id)).not.toContain(id);
+
+    // Queda en la auditoría.
+    const [update] = await auditEntries('Assignment', id);
+    expect(update).toMatchObject({ action: 'UPDATE', after: { annulmentReason: 'Registrada por error' } });
+
+    // Ni con SQL directo se borra o se modifica una vez anulada.
+    await expect(prisma.assignment.delete({ where: { id } })).rejects.toThrow();
+    await expect(prisma.assignment.update({ where: { id }, data: { annulledAt: null } })).rejects.toThrow();
   });
 
   it('el seed carga datos de ejemplo coherentes', async () => {

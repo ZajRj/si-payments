@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import AppIcon from '@/components/AppIcon.vue';
@@ -13,6 +13,19 @@ const email = ref('');
 const password = ref('');
 const error = ref('');
 const submitting = ref(false);
+
+// La contraseña se muestra unos segundos y vuelve a ocultarse sola, por si alguien mira la pantalla.
+const SHOW_PASSWORD_MS = 5000;
+const showPassword = ref(false);
+let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+function togglePassword() {
+  clearTimeout(hideTimer);
+  showPassword.value = !showPassword.value;
+  if (showPassword.value) hideTimer = setTimeout(() => (showPassword.value = false), SHOW_PASSWORD_MS);
+}
+
+onBeforeUnmount(() => clearTimeout(hideTimer));
 
 // El ?redirect= puede venir de la sesión de otro usuario: solo se respeta si quien entra puede ver esa página.
 function redirectTarget() {
@@ -69,7 +82,24 @@ async function submit() {
         </label>
         <label class="field">
           Contraseña
-          <input v-model="password" type="password" autocomplete="current-password" required />
+          <span class="password-field">
+            <input
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              :aria-pressed="showPassword"
+              :title="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              @click="togglePassword"
+            >
+              <AppIcon :name="showPassword ? 'eye-off' : 'eye'" :size="18" />
+            </button>
+          </span>
         </label>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <button type="submit" class="button button-primary" :disabled="submitting">

@@ -10,6 +10,10 @@ export type Assignment = {
   startDate: string;
   endDate: string | null;
   effectiveEndDate: string;
+  // Anulada: no se borra, pero ya no cuenta para la causación ni para los solapamientos.
+  annulledAt: string | null;
+  annulledBy: { id: number; name: string } | null;
+  annulmentReason: string | null;
 };
 
 export type AssignmentFilters = {
@@ -45,6 +49,14 @@ export async function updateAssignmentEndDate(id: number, endDate: string | null
   const { assignment } = await http<{ assignment: Assignment }>(`/assignments/${id}`, {
     method: 'PATCH',
     body: { endDate },
+  });
+  return assignment;
+}
+
+export async function annulAssignment(id: number, reason: string) {
+  const { assignment } = await http<{ assignment: Assignment }>(`/assignments/${id}/annul`, {
+    method: 'POST',
+    body: { reason },
   });
   return assignment;
 }

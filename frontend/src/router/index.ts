@@ -17,6 +17,8 @@ declare module 'vue-router' {
   }
 }
 
+const ReportsView = () => import('@/views/ReportsView.vue');
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -61,6 +63,12 @@ export const router = createRouter({
           meta: { navLabel: 'Proyectos', navIcon: 'folder', navGroup: 'Operación', permission: PERMISSIONS.PROJECTS_READ },
         },
         {
+          path: 'proyectos/:projectId(\\d+)',
+          name: 'project-detail',
+          component: () => import('@/views/ProjectDetailView.vue'),
+          meta: { permission: PERMISSIONS.PROJECTS_READ },
+        },
+        {
           path: 'asignaciones',
           name: 'assignments',
           component: () => import('@/views/AssignmentsView.vue'),
@@ -87,8 +95,22 @@ export const router = createRouter({
         {
           path: 'reportes',
           name: 'reports',
-          component: () => import('@/views/ReportsView.vue'),
+          component: ReportsView,
           meta: { navLabel: 'Reportes', navIcon: 'chart', navGroup: 'Control', permission: PERMISSIONS.REPORTS_READ },
+        },
+        // Estado de cuenta de una persona y saldos de un proyecto, con su propia dirección.
+        // Usan el mismo componente: al pasar de una a otra se conserva la página y sus filtros.
+        {
+          path: 'reportes/personas/:personId(\\d+)',
+          name: 'report-person',
+          component: ReportsView,
+          meta: { permission: PERMISSIONS.REPORTS_READ },
+        },
+        {
+          path: 'reportes/proyectos/:projectId(\\d+)',
+          name: 'report-project',
+          component: ReportsView,
+          meta: { permission: PERMISSIONS.REPORTS_READ },
         },
         {
           path: 'areas',

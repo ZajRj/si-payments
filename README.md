@@ -148,6 +148,7 @@ El Administrador no tiene `reports:read`: no participa en operaciones de dinero,
 
 - **Sesión:** el login entrega un JWT en una cookie `httpOnly` y `SameSite=Strict`.
 - **Revocación inmediata:** `authenticate` lee el usuario y sus permisos de la base de datos en cada petición, así que un cambio de rol o una desactivación aplican de inmediato.
+- **Cuenta desactivada:** quien la intenta usar con la contraseña correcta recibe "Tu cuenta está desactivada" (403) y no entra. Con una contraseña incorrecta, o si la cuenta no existe o fue eliminada, la respuesta es siempre "Credenciales inválidas" (401), para no revelar qué correos existen.
 - **Autorización:** `requirePermission` protege cada ruta del backend y responde 403 si falta el permiso.
 - **Interfaz:** el frontend oculta rutas y acciones según los permisos del usuario. Es solo una ayuda de navegación, porque quien autoriza es el backend.
 - **Protección contra bloqueo:** nadie puede cambiar su propio rol ni desactivarse, por lo que siempre queda al menos un administrador activo.
@@ -181,7 +182,7 @@ Al crear un módulo nuevo, todo servicio que escriba en la base de datos debe ha
 | Catálogo | Qué es |
 |---|---|
 | Parámetros | Datos de la empresa y textos para los documentos. Las claves válidas están en [settings.definitions.ts](backend/src/modules/settings/settings.definitions.ts). |
-| Áreas | Física, Química, Biología y las que agregue el administrador. No se borran, se desactivan. |
+| Áreas | Física, Química, Biología y las que agregue el administrador. Cada una tiene una descripción obligatoria que dice qué proyectos van en ella. No se borran, se desactivan; un trigger lo impide incluso con SQL directo. |
 | Grupos de pago | Periodicidad (semanal, quincenal, mensual) y día de corte personalizable. Se gestionan en Catálogos › Grupos de pago, a cargo del Generador de Nómina. Cada grupo genera sus períodos de pago. |
 
 ### Períodos y fechas de corte
@@ -214,16 +215,18 @@ Los gestiona el Generador de Nómina; el Receptor solo los consulta.
 | Entidad | Qué es |
 |---|---|
 | Persona | Beneficiario que cobra, sin usuario en el sistema. La cédula se guarda como `V-12345678` o `E-12345678` y no se repite: `v12.345.678` o `V-012345678` se normalizan a la misma. Teléfono y email son opcionales; vacíos se guardan como `null`. |
-| Proyecto | Código único, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). |
-| Asignación | Persona × proyecto × grupo de pago, con un monto en USD por cada período completo y fechas desde y hasta. Sin fecha hasta, dura lo que dure el proyecto. |
+| Proyecto | Código, área, ámbito (interno o externo) y vigencia (desde y hasta, inclusivos). El código se genera al guardar: tres letras del área sin acentos y cuatro caracteres al azar (`BIO-7KQ3`), sin 0, O, 1, I ni L para que no se confundan al leerlo. No se edita. |
+| Asignación | Persona × proyecto × grupo de pago, con un monto en USD por cada período completo y fechas desde y hasta: los días en que la persona trabaja y gana la asignación. Los períodos del grupo son el calendario de corte y pago; si la persona trabaja solo una parte de un período, cobra en proporción (ver Causación). Sin fecha hasta, dura lo que dure el proyecto. |
 
 ### Reglas
 
 - **Dinero en centavos:** los montos viajan y se guardan como enteros (`amountCents`; `15050` es USD 150,50), para que sumas y prorrateos no pierdan centavos. El frontend los convierte al mostrarlos.
-- **Dentro de la vigencia:** una asignación debe empezar y terminar dentro de la vigencia de su proyecto. Por lo mismo, no se puede acortar la vigencia de un proyecto si deja asignaciones fuera.
+- **Vigencia de un proyecto nuevo:** no se crea un proyecto con la vigencia ya terminada (fin anterior a hoy). Sí puede empezar en el pasado, para registrar un proyecto en curso o los que vienen de Excel; el formulario avisa que es retroactivo.
+- **Dentro de la vigencia:** una asignación debe empezar y terminar dentro de la vigencia de su proyecto. Por lo mismo, no se puede acortar la vigencia de un proyecto si deja asignaciones fuera. Si el cambio altera días ya causados, se rechaza antes por eso (ver Causación).
 - **Sin solapamientos:** una persona no puede tener dos asignaciones del mismo proyecto y grupo de pago con días en común, porque se le causaría dos veces el mismo período.
 - **El monto no se edita:** un cambio de monto (`POST /api/assignments/:id/amount-change`) cierra la asignación el día anterior y crea otra desde la fecha indicada, en una sola transacción. Así la causación sabe qué monto correspondía a cada día y queda el historial. De una asignación solo se puede cambiar la fecha de fin.
-- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
+- **Nada se borra:** personas y proyectos se desactivan, y solo si no tienen asignaciones vigentes o futuras. Áreas y proyectos tienen además un trigger que impide borrarlos con SQL directo.
+- **Anulación de asignaciones:** una asignación registrada por error se anula con motivo (`POST /api/assignments/:id/annul`); queda quién y cuándo, y no se borra. Si ya tiene causaciones vigentes, primero se anulan en Causación. Anulada, no se causa, no cuenta para solapamientos ni para desactivar personas, proyectos o grupos, y ya no se modifica (triggers `assignment_no_delete` y `assignment_annulled_is_final`). En la pantalla, la fecha de fin solo se puede cambiar en asignaciones en curso de proyectos en curso. No se crean asignaciones con personas, proyectos o grupos de pago inactivos, ni se reabre (quitando o moviendo la fecha de fin) una asignación cuyas partes estén inactivas.
 - **Límite conocido:** el control de solapamientos se hace en el servicio, no con una restricción de la base de datos. Con SQLite las escrituras se serializan, así que en la práctica no hay carreras.
 
 ## Causación
@@ -232,6 +235,7 @@ Pantalla **Causación**. La genera el Generador de Nómina; el Receptor la consu
 
 - **Prorrateo:** monto causado = monto por período de la asignación × días activos ÷ días reales del período, redondeado al centavo (la mitad sube). Se calcula con enteros ([proration.ts](backend/src/modules/accruals/proration.ts)). Ejemplo: USD 450 por quincena con inicio el 6 de enero causa 10/15 de 450 = USD 300 en la primera quincena de enero.
 - **Por lote:** `POST /api/accruals/generate` con `periodId` y, opcionalmente, `projectId`. Crea un lote por proyecto con las asignaciones del grupo de pago del período que tengan días activos en él. Solo se causan períodos que ya cerraron (fecha de fin igual o anterior a hoy).
+- **Pantalla:** muestra los lotes (`GET /api/accruals/batches`, filtrable por proyecto, grupo de pago, período y persona) con lo causado, pagado y pendiente de cada uno. Al desplegar un lote se ven todas sus causaciones (`GET /api/accruals?batchId=`), y desde ahí se anula una causación o el lote completo.
 - **Sin duplicados:** una asignación tiene como máximo una causación vigente por período. Si se agrega una asignación retroactiva o se anula una causación, volver a generar crea un lote complementario solo con lo que falta.
 - **Protección de lo causado:** no se puede cambiar la fecha de fin de una asignación, hacer un cambio de monto ni mover el fin de un proyecto si eso altera los días de un período ya causado. Tampoco se puede eliminar un período con causaciones.
 - **Anulación:** una causación o un lote completo se anulan con motivo (`POST /api/accruals/:id/annul`, `POST /api/accruals/batches/:id/annul`). No se puede anular lo que tiene pagos vigentes o está en una solicitud abierta.
@@ -264,7 +268,9 @@ Pantalla **Cajas chicas**. El Receptor gestiona las cajas, abre y cierra los mes
 
 ## Reportes y PDFs
 
-Pantalla **Reportes**, para el Generador y el Receptor (permiso `reports:read`). Solo leen datos; no escriben en la base de datos.
+Pantalla **Reportes**, para el Generador y el Receptor (permiso `reports:read`). Solo leen datos; no escriben en la base de datos. El estado de cuenta de una persona y los saldos de un proyecto tienen su propia dirección (`/reportes/personas/:id`, `/reportes/proyectos/:id`): se pueden recargar, compartir y volver con Atrás.
+
+Cada proyecto tiene además una ficha (`/proyectos/:id`) con sus datos, saldos, asignaciones, saldo por persona, solicitudes de pago y cajas chicas.
 
 | Reporte | Endpoint | Qué responde |
 |---|---|---|

@@ -19,8 +19,8 @@ export type Project = {
   assignmentCount: number;
 };
 
+// El código no se envía: el servidor lo genera al azar con el prefijo del área y no se edita.
 export type ProjectPayload = {
-  code: string;
   name: string;
   areaId: number;
   scope: Scope;

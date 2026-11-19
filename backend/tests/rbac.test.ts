@@ -128,10 +128,20 @@ describe('gestión de usuarios', () => {
     await admin.patch(`/api/users/${created.body.user.id}`).send({ active: false }).expect(200);
 
     await session.get('/api/auth/me').expect(401);
-    await request(app)
+    // Con la contraseña correcta se le dice que la cuenta está desactivada, y no entra.
+    const inactive = await request(app)
       .post('/api/auth/login')
       .send({ email: 'temporal@example.com', password: 'Temporal1234!' })
+      .expect(403);
+    expect(inactive.body.error.code).toBe('ACCOUNT_INACTIVE');
+    expect(inactive.headers['set-cookie']).toBeUndefined();
+
+    // Con una contraseña incorrecta no se revela que la cuenta existe ni que está desactivada.
+    const wrong = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'temporal@example.com', password: 'Otra1234!' })
       .expect(401);
+    expect(wrong.body.error.code).toBe('INVALID_CREDENTIALS');
   });
 
   it('impide que un administrador se quite su propio acceso', async () => {

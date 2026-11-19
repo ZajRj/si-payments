@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
+  annulAssignment,
   changeAssignmentAmount,
   createAssignment,
   listAssignments,
@@ -18,7 +19,7 @@ import { centsToInput, formatUsd, parseUsd } from '@/lib/money';
 import type { Tone } from '@/lib/status';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
-import { formatDate, formatRange } from '@/lib/dates';
+import { formatDate, formatDateTime, formatRange } from '@/lib/dates';
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -54,11 +55,26 @@ function canChangeAmount(assignment: Assignment) {
   return nextDay(assignment.startDate) <= assignment.effectiveEndDate;
 }
 
-type AssignmentStatus = 'Futura' | 'Finalizada' | 'Vigente';
+type AssignmentStatus = 'Futura' | 'Finalizada' | 'Vigente' | 'Anulada';
 
-const STATUS_TONES: Record<AssignmentStatus, Tone> = { Futura: 'info', Finalizada: 'neutral', Vigente: 'success' };
+const STATUS_TONES: Record<AssignmentStatus, Tone> = {
+  Futura: 'info',
+  Finalizada: 'neutral',
+  Vigente: 'success',
+  Anulada: 'danger',
+};
+
+// La fecha de fin solo se cambia mientras la asignación y su proyecto siguen en curso:
+// lo ya terminado (asignación finalizada o anulada, proyecto vencido o inactivo) no muestra la acción.
+function canChangeEnd(assignment: Assignment) {
+  if (status(assignment) === 'Finalizada' || status(assignment) === 'Anulada') return false;
+  if (assignment.project.endDate < today) return false;
+  const project = projects.value.find((p) => p.id === assignment.project.id);
+  return project?.active ?? true;
+}
 
 function status(assignment: Assignment): AssignmentStatus {
+  if (assignment.annulledAt) return 'Anulada';
   if (assignment.startDate > today) return 'Futura';
   if (assignment.effectiveEndDate < today) return 'Finalizada';
   return 'Vigente';
@@ -199,6 +215,33 @@ async function saveAction() {
   }
 }
 
+// Anulación: la asignación no se borra, queda anulada con motivo y deja de contar.
+const annulTarget = ref<Assignment | null>(null);
+const annulReason = ref('');
+const annulSaving = ref(false);
+const annulError = ref('');
+
+function openAnnul(assignment: Assignment) {
+  annulTarget.value = assignment;
+  annulReason.value = '';
+  annulError.value = '';
+}
+
+async function saveAnnul() {
+  if (!annulTarget.value) return;
+  annulSaving.value = true;
+  annulError.value = '';
+  try {
+    await annulAssignment(annulTarget.value.id, annulReason.value);
+    annulTarget.value = null;
+    await loadAssignments();
+  } catch (e) {
+    annulError.value = errorMessage(e);
+  } finally {
+    annulSaving.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -249,9 +292,15 @@ onMounted(load);
       <label class="field">
         Monto por período (USD)
         <input v-model="form.amount" inputmode="decimal" required placeholder="150.00" />
+        <span class="hint">Lo que cobra por cada período completo del grupo.</span>
       </label>
+      <p class="notice field-wide">
+        <strong>Desde y hasta</strong> son los días en que la persona trabaja en el proyecto y gana su asignación. Los
+        <strong>períodos</strong> del grupo de pago son el calendario de corte y pago. Si la persona trabaja solo una parte de
+        un período, cobra la proporción de días (prorrateo).
+      </p>
       <label class="field">
-        Desde
+        Desde (primer día que cobra)
         <input
           v-model="form.startDate"
           type="date"
@@ -261,9 +310,9 @@ onMounted(load);
         />
       </label>
       <label class="field">
-        Hasta (opcional)
+        Hasta (último día que cobra, opcional)
         <input v-model="form.endDate" type="date" :min="form.startDate" :max="selectedProject?.endDate" />
-        <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
+        <span class="hint">Vacío: cobra hasta el fin de la vigencia del proyecto.</span>
       </label>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
       <div class="actions">
@@ -284,15 +333,20 @@ onMounted(load);
   >
     <form v-if="action" class="form-grid" @submit.prevent="saveAction">
       <template v-if="action.type === 'end'">
+        <p class="hint">
+          Es el último día en que {{ action.assignment.person.name }} gana esta asignación en el proyecto. Desde el día
+          siguiente ya no se le causa nada; si el fin cae a mitad de un período, ese período se paga en proporción a los
+          días trabajados. No se puede mover a una fecha que cambie días de un período ya causado.
+        </p>
         <label class="field">
-          Hasta
+          Último día que cobra
           <input
             v-model="actionForm.endDate"
             type="date"
             :min="action.assignment.startDate"
             :max="action.assignment.project.endDate"
           />
-          <span class="hint">Vacío: hasta el fin de la vigencia del proyecto.</span>
+          <span class="hint">Vacío: cobra hasta el fin de la vigencia del proyecto.</span>
         </label>
       </template>
       <template v-else>
@@ -322,12 +376,38 @@ onMounted(load);
     </form>
   </AppModal>
 
+  <AppModal
+    :open="Boolean(annulTarget)"
+    :title="annulTarget ? `Anular asignación · ${annulTarget.person.name} (${annulTarget.project.code})` : ''"
+    @close="annulTarget = null"
+  >
+    <form v-if="annulTarget" class="form-grid" @submit.prevent="saveAnnul">
+      <p class="hint">
+        {{ annulTarget.person.name }} · {{ annulTarget.paymentGroup.name }} · {{ formatUsd(annulTarget.amountCents) }} por período,
+        del {{ formatDate(annulTarget.startDate) }} al {{ formatDate(annulTarget.effectiveEndDate) }}.
+      </p>
+      <p class="hint">
+        La asignación no se borra: queda registrada como anulada, con tu nombre y el motivo, y deja de causarse. No se puede
+        deshacer. Si ya tiene causaciones vigentes, primero hay que anularlas en Causación.
+      </p>
+      <label class="field field-wide">
+        Motivo
+        <input v-model="annulReason" required minlength="5" maxlength="500" />
+      </label>
+      <p v-if="annulError" class="error" role="alert">{{ annulError }}</p>
+      <div class="actions">
+        <button type="button" class="button" @click="annulTarget = null">Volver</button>
+        <button type="submit" class="button button-danger-solid" :disabled="annulSaving">Anular asignación</button>
+      </div>
+    </form>
+  </AppModal>
+
   <form class="card form-grid section-gap" @submit.prevent>
     <label class="field">
       Proyecto
       <select v-model.number="filters.projectId">
         <option :value="0">Todos</option>
-        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }}</option>
+        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.code }} · {{ project.name }}</option>
       </select>
     </label>
     <label class="field">
@@ -354,8 +434,8 @@ onMounted(load);
           <th scope="col">Proyecto</th>
           <th scope="col">Grupo de pago</th>
           <th scope="col" class="num">Monto por período</th>
-          <th scope="col">Desde</th>
-          <th scope="col">Hasta</th>
+          <th scope="col" title="Primer día que cobra">Desde</th>
+          <th scope="col" title="Último día que cobra">Hasta</th>
           <th scope="col">Estado</th>
           <th v-if="canManage" scope="col"><span class="sr-only">Acciones</span></th>
         </tr>
@@ -374,9 +454,15 @@ onMounted(load);
             {{ formatDate(assignment.effectiveEndDate) }}
             <span v-if="assignment.endDate === null" class="permission-code">fin del proyecto</span>
           </td>
-          <td><StatusBadge :label="status(assignment)" :tone="STATUS_TONES[status(assignment)]" /></td>
+          <td>
+            <StatusBadge :label="status(assignment)" :tone="STATUS_TONES[status(assignment)]" />
+            <span v-if="assignment.annulmentReason" class="permission-code">{{ assignment.annulmentReason }}</span>
+            <span v-if="assignment.annulledBy" class="permission-code">
+              Por {{ assignment.annulledBy.name }}, {{ formatDateTime(assignment.annulledAt!) }}
+            </span>
+          </td>
           <td v-if="canManage">
-            <div class="actions">
+            <div v-if="!assignment.annulledAt" class="actions">
               <button
                 v-if="status(assignment) !== 'Finalizada' && canChangeAmount(assignment)"
                 type="button"
@@ -385,14 +471,10 @@ onMounted(load);
               >
                 Monto
               </button>
-              <button
-                v-if="status(assignment) !== 'Finalizada'"
-                type="button"
-                class="button"
-                @click="openAction('end', assignment)"
-              >
+              <button v-if="canChangeEnd(assignment)" type="button" class="button" @click="openAction('end', assignment)">
                 Fecha de fin
               </button>
+              <button type="button" class="button button-danger" @click="openAnnul(assignment)">Anular</button>
             </div>
           </td>
         </tr>

@@ -7,12 +7,7 @@ import { requirePermission } from '../../middleware/authorize.js';
 import { PERMISSIONS } from '../../rbac/permissions.js';
 import { createProject, getProject, listProjects, SCOPES, updateProject } from './projects.service.js';
 
-const createProjectSchema = z.object({
-  code: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z0-9-]{2,20}$/, 'El código solo admite letras, números y guiones (2 a 20 caracteres)'),
+const projectFieldsSchema = z.object({
   name: z.string().trim().min(1).max(120),
   areaId: z.number().int().positive(),
   scope: z.enum(SCOPES),
@@ -20,8 +15,18 @@ const createProjectSchema = z.object({
   endDate: dateOnlySchema,
 });
 
-const updateProjectSchema = createProjectSchema.partial().extend({ active: z.boolean().optional() });
+// El código es opcional: si no viene, se genera al azar con el prefijo del área. La interfaz no lo envía.
+const createProjectSchema = projectFieldsSchema.extend({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9-]{2,20}$/, 'El código solo admite letras, números y guiones (2 a 20 caracteres)')
+    .optional(),
+});
 
+// El código no se edita: identifica al proyecto en solicitudes, recibos y reportes.
+const updateProjectSchema = projectFieldsSchema.partial().extend({ active: z.boolean().optional() }).strict();
 const listQuerySchema = z.object({
   areaId: z.coerce.number().int().positive().optional(),
   active: z.stringbool().optional(),
