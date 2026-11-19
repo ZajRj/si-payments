@@ -53,17 +53,17 @@ const tasks = computed<Task[]>(() => {
   const vouchers = pending.vouchers.length;
   if (decides.value) {
     return [
-      { count: requests.filter((r) => r.status === 'SUBMITTED').length, title: 'Solicitudes por aprobar', detail: 'Enviadas por el Generador', action: 'Revisar', to: requestsTo('SUBMITTED') },
-      { count: requests.filter((r) => r.status === 'APPROVED' && r.outstandingCents > 0).length, title: 'Solicitudes por pagar', detail: 'Aprobadas con saldo pendiente', action: 'Registrar entregas', to: requestsTo('TO_PAY') },
-      { count: requests.filter((r) => r.status === 'APPROVED' && r.outstandingCents === 0).length, title: 'Pagadas, falta cerrar', detail: 'Todo entregado; cierra el ciclo', action: 'Cerrar', to: requestsTo('TO_CLOSE') },
-      { count: vouchers, title: 'Vales de caja chica', detail: 'Por aprobar o desembolsar', action: 'Ver cajas', to: { name: 'petty-cash' } },
+      { count: requests.filter((r) => r.status === 'SUBMITTED').length, title: 'Solicitudes por responder', detail: 'Debes aprobarlas o rechazarlas', action: 'Revisar', to: requestsTo('SUBMITTED') },
+      { count: requests.filter((r) => r.status === 'APPROVED' && r.outstandingCents > 0).length, title: 'Solicitudes por pagar', detail: 'Aprobadas, falta entregar el dinero', action: 'Entregar dinero', to: requestsTo('TO_PAY') },
+      { count: requests.filter((r) => r.status === 'APPROVED' && r.outstandingCents === 0).length, title: 'Falta cerrarlas', detail: 'Ya se entregó todo el dinero', action: 'Cerrar', to: requestsTo('TO_CLOSE') },
+      { count: vouchers, title: 'Vales de caja chica', detail: 'Esperan tu aprobación o la entrega del dinero', action: 'Ver cajas', to: { name: 'petty-cash' } },
     ];
   }
   if (canSeeRequests.value) {
     return [
-      { count: requests.filter((r) => r.status === 'DRAFT').length, title: 'Borradores por enviar', detail: 'Solicitudes que el Receptor todavía no ve', action: 'Enviar', to: requestsTo('DRAFT') },
-      { count: requests.filter((r) => r.status === 'SUBMITTED').length, title: 'Esperando decisión', detail: 'Enviadas al Receptor de Nómina', action: 'Ver', to: requestsTo('SUBMITTED') },
-      { count: vouchers, title: 'Vales por rendir', detail: 'Desembolsados sin comprobante', action: 'Rendir', to: { name: 'petty-cash' } },
+      { count: requests.filter((r) => r.status === 'DRAFT').length, title: 'Solicitudes por enviar', detail: 'El Receptor todavía no las ve', action: 'Enviar', to: requestsTo('DRAFT') },
+      { count: requests.filter((r) => r.status === 'SUBMITTED').length, title: 'Esperando respuesta', detail: 'Ya las enviaste; no tienes que hacer nada', action: 'Ver', to: requestsTo('SUBMITTED') },
+      { count: vouchers, title: 'Vales sin comprobante', detail: 'Ya tienes el dinero; falta entregar el comprobante', action: 'Entregar comprobante', to: { name: 'petty-cash' } },
     ];
   }
   return [];
@@ -294,7 +294,7 @@ onMounted(async () => {
 
   <section v-if="canSeeVouchers && pending.vouchers.length" class="card section-gap">
     <div class="page-header">
-      <h2>{{ decides ? 'Vales por aprobar o desembolsar' : 'Vales por rendir' }}</h2>
+      <h2>{{ decides ? 'Vales que esperan tu respuesta' : 'Vales sin comprobante' }}</h2>
       <RouterLink :to="{ name: 'petty-cash' }" class="button">Ver cajas</RouterLink>
     </div>
     <div class="table-wrapper">

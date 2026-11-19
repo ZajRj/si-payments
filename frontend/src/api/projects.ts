@@ -45,3 +45,7 @@ export async function updateProject(id: number, payload: Partial<ProjectPayload>
   const { project } = await http<{ project: Project }>(`/projects/${id}`, { method: 'PATCH', body: payload });
   return project;
 }
+
+export async function getProject(id: number) {
+  return (await http<{ project: Project }>(`/projects/${id}`)).project;
+}

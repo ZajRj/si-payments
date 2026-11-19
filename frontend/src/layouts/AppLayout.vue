@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppIcon from '@/components/AppIcon.vue';
 import CommandPalette from '@/components/CommandPalette.vue';
+import ToastHost from '@/components/ToastHost.vue';
 import { useAuthStore } from '@/stores/auth';
 import { usePendingStore } from '@/stores/pending';
 
@@ -11,7 +12,7 @@ const pending = usePendingStore();
 const route = useRoute();
 const router = useRouter();
 
-const GROUP_ORDER = ['', 'Operación', 'Pagos', 'Control', 'Catálogos', 'Administración'];
+const GROUP_ORDER = ['', 'Operación', 'Pagos', 'Control','Administración'];
 
 // Enlaces visibles para el usuario, agrupados por sección.
 const navItems = computed(() =>
@@ -143,6 +144,7 @@ async function logout() {
     <main class="content">
       <RouterView />
     </main>
+    <ToastHost />
 
     <CommandPalette :open="paletteOpen" :nav-items="paletteItems" @close="paletteOpen = false" />
   </div>

@@ -23,6 +23,14 @@ export function listPeople({ search, active }: ListFilters) {
   return prisma.person.findMany({ where, orderBy: { name: 'asc' } });
 }
 
+export async function getPerson(id: number) {
+  const person = await prisma.person.findUnique({ where: { id } });
+  if (!person) {
+    throw new HttpError(404, 'PERSON_NOT_FOUND', 'Persona no encontrada');
+  }
+  return person;
+}
+
 export async function createPerson(actorId: number, data: PersonInput) {
   try {
     return await prisma.$transaction(async (tx) => {

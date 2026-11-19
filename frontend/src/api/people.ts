@@ -28,3 +28,7 @@ export async function updatePerson(id: number, payload: Partial<PersonPayload>) 
   const { person } = await http<{ person: Person }>(`/people/${id}`, { method: 'PATCH', body: payload });
   return person;
 }
+
+export async function getPerson(id: number) {
+  return (await http<{ person: Person }>(`/people/${id}`)).person;
+}

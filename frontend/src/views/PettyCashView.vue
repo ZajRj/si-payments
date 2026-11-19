@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import {
   approveVoucher,
@@ -11,13 +11,11 @@ import {
   listFundPeriods,
   listFunds,
   listVouchers,
-  monthLabel,
   openPeriod,
   rejectVoucher,
   requestVoucher,
   settleVoucher,
   updateFund,
-  VOUCHER_STATUS_LABELS,
   type PettyCashFund,
   type PettyCashPeriod,
   type Voucher,
@@ -25,13 +23,15 @@ import {
 import { listProjects, type Project } from '@/api/projects';
 import AppIcon from '@/components/AppIcon.vue';
 import AppModal from '@/components/AppModal.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
-import { formatUsd, parseUsd } from '@/lib/money';
-import { VOUCHER_STATUS_TONES, activeTone } from '@/lib/status';
+import { formatDate } from '@/lib/dates';
+import { centsToInput, formatUsd, MONEY_EXAMPLE, parseUsd } from '@/lib/money';
+import { activeTone } from '@/lib/status';
+import { notify } from '@/lib/toast';
 import { PERMISSIONS } from '@/rbac/permissions';
 import { useAuthStore } from '@/stores/auth';
 import { usePendingStore } from '@/stores/pending';
-import { formatDate } from '@/lib/dates';
 
 const auth = useAuthStore();
 const pending = usePendingStore();
@@ -39,6 +39,9 @@ const canManage = computed(() => auth.can(PERMISSIONS.PETTY_CASH_MANAGE));
 const canRequest = computed(() => auth.can(PERMISSIONS.PETTY_CASH_REQUEST));
 // Cancelar y rendir son solo de quien pidió el vale.
 const isOwnVoucher = (voucher: Voucher) => canRequest.value && voucher.requestedBy?.id === auth.user?.id;
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthName = ({ year, month }: { year: number; month: number }) => `${MONTHS[month - 1]} de ${year}`;
 
 const funds = ref<PettyCashFund[]>([]);
 const projects = ref<Project[]>([]);
@@ -69,7 +72,7 @@ async function load() {
   await loadFunds();
 }
 
-// Crear o editar una caja.
+// ---------- Crear o editar una caja ----------
 const editing = ref<PettyCashFund | null>(null);
 const formOpen = ref(false);
 const saving = ref(false);
@@ -86,15 +89,17 @@ function openForm(fund: PettyCashFund | null) {
 async function saveFund() {
   formError.value = '';
   if (!form.projectId) {
-    formError.value = 'Selecciona el proyecto';
+    formError.value = 'Elige el proyecto al que pertenece la caja.';
     return;
   }
   saving.value = true;
   try {
     if (editing.value) {
       await updateFund(editing.value.id, { name: form.name, projectId: form.projectId, active: form.active });
+      notify(`Listo: se guardaron los cambios de «${form.name}».`);
     } else {
       await createFund({ name: form.name, projectId: form.projectId });
+      notify(`Listo: se creó la caja «${form.name}». Ahora hay que abrir su primer mes.`);
     }
     formOpen.value = false;
     await loadFunds();
@@ -106,17 +111,17 @@ async function saveFund() {
   }
 }
 
-// Caja seleccionada: meses y vales.
+// ---------- Caja seleccionada: meses y vales ----------
 const selected = ref<PettyCashFund | null>(null);
 const periods = ref<PettyCashPeriod[]>([]);
 const viewedPeriodId = ref(0);
 const vouchers = ref<Voucher[]>([]);
 const detailError = ref('');
 const busy = ref(false);
-// Cerrar el mes no se puede deshacer: pide confirmación en la misma pantalla.
 const confirmingClose = ref(false);
 
 const viewedPeriod = computed(() => periods.value.find((period) => period.id === viewedPeriodId.value) ?? null);
+const open = computed(() => selected.value?.openPeriod ?? null);
 
 async function loadVouchers() {
   vouchers.value = viewedPeriodId.value ? await listVouchers({ periodId: viewedPeriodId.value }) : [];
@@ -124,7 +129,6 @@ async function loadVouchers() {
 
 async function selectFund(id: number, periodId?: number) {
   detailError.value = '';
-  // La confirmación de cierre es de una caja concreta: no debe pasar a otra al cambiar de caja.
   if (selected.value?.id !== id) confirmingClose.value = false;
   try {
     funds.value = await listFunds();
@@ -138,7 +142,6 @@ async function selectFund(id: number, periodId?: number) {
 }
 
 const route = useRoute();
-const router = useRouter();
 
 // La caja abierta va en la URL (?fund=): Atrás vuelve a la lista y el enlace se puede compartir.
 const fundId = computed(() => {
@@ -167,7 +170,7 @@ async function viewPeriod(id: number) {
   }
 }
 
-async function run(action: () => Promise<unknown>) {
+async function run(action: () => Promise<unknown>, success?: string) {
   if (!selected.value) return;
   detailError.value = '';
   busy.value = true;
@@ -175,8 +178,10 @@ async function run(action: () => Promise<unknown>) {
     await action();
     voucherAction.value = null;
     voucherConfirm.value = null;
+    confirmingClose.value = false;
     await selectFund(selected.value.id, viewedPeriodId.value || undefined);
     void pending.refresh();
+    if (success) notify(success);
   } catch (e) {
     detailError.value = errorMessage(e);
   } finally {
@@ -184,29 +189,44 @@ async function run(action: () => Promise<unknown>) {
   }
 }
 
-// Apertura del mes.
+// ---------- Apertura del mes ----------
 const openMonthForm = reactive({ month: today.slice(0, 7), amount: '' });
+const thisMonth = today.slice(0, 7);
+
+// El mes que se va a abrir: el primero lo elige quien abre; los siguientes son consecutivos al último cerrado.
+const nextMonth = computed(() => {
+  const last = periods.value[0];
+  if (!last) return null;
+  const month = last.month === 12 ? 1 : last.month + 1;
+  const year = last.month === 12 ? last.year + 1 : last.year;
+  return { year, month, key: `${year}-${String(month).padStart(2, '0')}` };
+});
+const nextMonthIsFuture = computed(() => Boolean(nextMonth.value && nextMonth.value.key > thisMonth));
 
 function submitOpen() {
   const fund = selected.value;
   if (!fund) return;
   const replenishmentCents = openMonthForm.amount.trim() ? parseUsd(openMonthForm.amount) : 0;
   if (replenishmentCents === null) {
-    detailError.value = 'Escribe un monto válido, por ejemplo 500 o 500.00';
+    detailError.value = `Escribe el dinero solo con números. ${MONEY_EXAMPLE}.`;
     return;
   }
-  // El primer mes se elige; los siguientes son consecutivos y los decide el servidor.
   const first = periods.value.length === 0;
   const [year, month] = openMonthForm.month.split('-').map(Number);
-  return run(() => openPeriod(fund.id, first ? { year, month, replenishmentCents } : { replenishmentCents }));
+  const label = first ? monthName({ year, month }) : monthName(nextMonth.value!);
+  return run(
+    () => openPeriod(fund.id, first ? { year, month, replenishmentCents } : { replenishmentCents }),
+    `Listo: se abrió ${label}. Ya se pueden pedir vales.`,
+  );
 }
 
-// Solicitud de vale.
+// ---------- Pedir un vale ----------
 const voucherFormOpen = ref(false);
 const voucherForm = reactive({ concept: '', beneficiary: '', amount: '' });
 
 function openVoucherForm() {
   Object.assign(voucherForm, { concept: '', beneficiary: '', amount: '' });
+  detailError.value = '';
   voucherFormOpen.value = true;
 }
 
@@ -215,65 +235,115 @@ async function submitVoucher() {
   if (!fund) return;
   const amountCents = parseUsd(voucherForm.amount);
   if (amountCents === null || amountCents === 0) {
-    detailError.value = 'Escribe un monto válido, por ejemplo 150 o 150.50';
+    detailError.value = `Escribe cuánto dinero necesitas, solo con números. ${MONEY_EXAMPLE}.`;
     return;
   }
-  await run(() => requestVoucher(fund.id, { concept: voucherForm.concept, beneficiary: voucherForm.beneficiary, amountCents }));
+  const available = open.value?.availableCents ?? 0;
+  if (amountCents > available) {
+    detailError.value = `En la caja solo hay ${formatUsd(available)} disponibles. Pide ese monto o uno menor.`;
+    return;
+  }
+  await run(
+    () => requestVoucher(fund.id, { concept: voucherForm.concept, beneficiary: voucherForm.beneficiary, amountCents }),
+    `Listo: pediste ${formatUsd(amountCents)}. Ahora el Receptor debe aprobarlo.`,
+  );
   if (!detailError.value) voucherFormOpen.value = false;
 }
 
-// Aprobar, desembolsar y cancelar un vale se confirman antes: desembolsar entrega dinero.
+// ---------- Aprobar, entregar, cancelar, rechazar ----------
 type VoucherConfirm = { kind: 'approve' | 'disburse' | 'cancel'; voucher: Voucher };
 const voucherConfirm = ref<VoucherConfirm | null>(null);
 
-const VOUCHER_CONFIRM_TEXT: Record<VoucherConfirm['kind'], { title: string; button: string }> = {
-  approve: { title: 'Aprobar vale', button: 'Aprobar vale' },
-  disburse: { title: 'Desembolsar vale', button: 'Confirmar entrega' },
-  cancel: { title: 'Cancelar vale', button: 'Cancelar vale' },
+const CONFIRM_TEXT: Record<VoucherConfirm['kind'], { title: string; button: string; done: string }> = {
+  approve: { title: '¿Aprobar este vale?', button: 'Sí, aprobar', done: 'Listo: aprobaste el vale. Ahora falta entregar el dinero.' },
+  disburse: { title: '¿Ya entregaste el dinero?', button: 'Sí, ya lo entregué', done: 'Listo: quedó registrada la entrega del dinero. Ahora hay que esperar el comprobante.' },
+  cancel: { title: '¿Cancelar este pedido?', button: 'Sí, cancelar pedido', done: 'Se canceló el pedido de dinero.' },
 };
 
 function confirmVoucher() {
   const current = voucherConfirm.value;
   if (!current) return;
   const id = current.voucher.id;
-  if (current.kind === 'approve') return run(() => approveVoucher(id));
-  if (current.kind === 'disburse') return run(() => disburseVoucher(id));
-  return run(() => cancelVoucher(id));
+  const done = CONFIRM_TEXT[current.kind].done;
+  if (current.kind === 'approve') return run(() => approveVoucher(id), done);
+  if (current.kind === 'disburse') return run(() => disburseVoucher(id), done);
+  return run(() => cancelVoucher(id), done);
 }
 
-// Rechazo y rendición de un vale.
 const voucherAction = ref<{ type: 'reject' | 'settle'; voucher: Voucher } | null>(null);
 const actionForm = reactive({ reason: '', spent: '', receiptReference: '', receiptDate: today });
 
 function openVoucherAction(type: 'reject' | 'settle', voucher: Voucher) {
   voucherAction.value = { type, voucher };
-  Object.assign(actionForm, {
-    reason: '',
-    spent: (voucher.amountCents / 100).toFixed(2),
-    receiptReference: '',
-    receiptDate: today,
-  });
+  detailError.value = '';
+  Object.assign(actionForm, { reason: '', spent: centsToInput(voucher.amountCents), receiptReference: '', receiptDate: today });
 }
 
 function submitVoucherAction() {
   const current = voucherAction.value;
   if (!current) return;
   if (current.type === 'reject') {
-    return run(() => rejectVoucher(current.voucher.id, actionForm.reason));
+    return run(() => rejectVoucher(current.voucher.id, actionForm.reason), 'Se rechazó el vale. Quien lo pidió verá tu motivo.');
   }
   const spentCents = parseUsd(actionForm.spent);
   if (spentCents === null) {
-    detailError.value = 'Escribe un monto válido, por ejemplo 150 o 150.50';
+    detailError.value = `Escribe cuánto se gastó, solo con números. ${MONEY_EXAMPLE}.`;
     return;
   }
-  return run(() =>
-    settleVoucher(current.voucher.id, {
-      spentCents,
-      receiptReference: actionForm.receiptReference,
-      receiptDate: actionForm.receiptDate,
-    }),
+  if (spentCents > current.voucher.amountCents) {
+    detailError.value = `No se puede gastar más de lo que se recibió (${formatUsd(current.voucher.amountCents)}).`;
+    return;
+  }
+  const back = current.voucher.amountCents - spentCents;
+  return run(
+    () => settleVoucher(current.voucher.id, { spentCents, receiptReference: actionForm.receiptReference, receiptDate: actionForm.receiptDate }),
+    back > 0 ? `Listo: comprobante entregado. ${formatUsd(back)} volvieron a la caja.` : 'Listo: comprobante entregado. El vale quedó terminado.',
   );
 }
+
+// Qué le pasa a cada vale y qué le toca hacer a quien mira.
+function plain(voucher: Voucher): { tone: 'todo' | 'wait' | 'ok' | 'bad'; text: string } {
+  switch (voucher.status) {
+    case 'REQUESTED':
+      return canManage.value
+        ? { tone: 'todo', text: 'Espera tu respuesta: apruébalo o recházalo.' }
+        : { tone: 'wait', text: 'Esperando que el Receptor lo apruebe.' };
+    case 'APPROVED':
+      return canManage.value
+        ? { tone: 'todo', text: `Aprobado. Falta entregarle el dinero a ${voucher.beneficiary}.` }
+        : { tone: 'wait', text: 'Aprobado. Falta que el Receptor entregue el dinero.' };
+    case 'DISBURSED':
+      return isOwnVoucher(voucher)
+        ? { tone: 'todo', text: 'Ya tienes el dinero. Falta entregar el comprobante del gasto.' }
+        : { tone: 'wait', text: `El dinero ya se entregó. Falta que ${voucher.requestedBy?.name ?? 'quien lo pidió'} entregue el comprobante.` };
+    case 'SETTLED':
+      return {
+        tone: 'ok',
+        text: `Terminado: se gastó ${formatUsd(voucher.spentCents ?? 0)} y volvieron ${formatUsd(voucher.returnedCents ?? 0)} a la caja. Comprobante ${voucher.receiptReference} del ${formatDate(voucher.receiptDate)}.`,
+      };
+    case 'REJECTED':
+      return { tone: 'bad', text: `Rechazado: ${voucher.rejectionReason ?? 'sin motivo'}` };
+    case 'CANCELLED':
+      return { tone: 'bad', text: 'El pedido fue cancelado.' };
+  }
+}
+
+const PLAIN_STATUS: Record<string, string> = {
+  REQUESTED: 'Esperando aprobación',
+  APPROVED: 'Falta entregar el dinero',
+  DISBURSED: 'Falta el comprobante',
+  SETTLED: 'Terminado',
+  REJECTED: 'Rechazado',
+  CANCELLED: 'Cancelado',
+};
+const PLAIN_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
+  REQUESTED: 'warning',
+  APPROVED: 'info',
+  DISBURSED: 'info',
+  SETTLED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'neutral',
+};
 
 onMounted(async () => {
   await load();
@@ -282,49 +352,92 @@ onMounted(async () => {
 </script>
 
 <template>
-  <template v-if="!selected">
-    <div class="page-header">
-      <h1>Cajas chicas</h1>
-      <button v-if="canManage" type="button" class="button button-primary" @click="openForm(null)">Nueva caja</button>
-    </div>
-    <p class="hint">
-      Cada caja se asigna a un proyecto y funciona por meses: apertura, vales (solicitud, aprobación, desembolso y rendición
-      con comprobante) y cierre. El saldo final pasa al mes siguiente.
-    </p>
-  </template>
-
-  <AppModal
-    :open="formOpen"
-    :title="editing ? `Editar ${editing.name}` : 'Nueva caja chica'"
-    @close="formOpen = false"
-  >
+  <!-- Nueva / editar caja -->
+  <AppModal :open="formOpen" :title="editing ? `Editar «${editing.name}»` : 'Crear una caja chica'" @close="formOpen = false">
     <form class="form-grid" @submit.prevent="saveFund">
       <label class="field">
-        Nombre
-        <input v-model="form.name" required maxlength="80" />
+        Nombre de la caja
+        <input v-model="form.name" required maxlength="80" placeholder="Ej.: Caja chica de Física" />
       </label>
       <label class="field">
-        Proyecto
+        ¿De qué proyecto es?
         <select v-model.number="form.projectId" required>
-          <option :value="0" disabled>Selecciona un proyecto</option>
-          <option v-for="project in activeProjects" :key="project.id" :value="project.id">
-            {{ project.code }} · {{ project.name }}
-          </option>
+          <option :value="0" disabled>Elige un proyecto</option>
+          <option v-for="project in activeProjects" :key="project.id" :value="project.id">{{ project.code }} · {{ project.name }}</option>
         </select>
       </label>
       <label v-if="editing" class="checkbox">
         <input v-model="form.active" type="checkbox" />
-        Activa
+        La caja está en uso
       </label>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-      <div class="actions">
-        <button type="button" class="button" @click="formOpen = false">Cancelar</button>
-        <button type="submit" class="button button-primary" :disabled="saving">Guardar</button>
+      <div class="confirm-actions">
+        <button type="button" class="button" @click="formOpen = false">Volver</button>
+        <button type="submit" class="button button-primary" :disabled="saving">{{ saving ? 'Un momento…' : 'Guardar' }}</button>
       </div>
     </form>
   </AppModal>
 
-  <template v-if="selected">
+  <!-- LISTA DE CAJAS -->
+  <template v-if="!selected">
+    <div class="page-header">
+      <h1>Cajas chicas</h1>
+      <button v-if="canManage" type="button" class="button button-primary" @click="openForm(null)">Crear una caja chica</button>
+    </div>
+    <p class="hint">
+      Una caja chica es un dinero en efectivo guardado para gastos pequeños de un proyecto. Cada mes se abre; quien necesita dinero pide un
+      <strong>vale</strong>; cuando lo gasta, entrega el comprobante; y al final del mes se cierra.
+    </p>
+
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-else-if="loading">Cargando…</p>
+    <div v-else class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Caja</th>
+            <th scope="col">Proyecto</th>
+            <th scope="col">Mes abierto</th>
+            <th scope="col" class="num">Disponible</th>
+            <th scope="col">Vales en trámite</th>
+            <th scope="col">Estado</th>
+            <th scope="col"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="fund in funds" :key="fund.id">
+            <td>{{ fund.name }}</td>
+            <td class="nowrap" :title="fund.project.name">
+              {{ fund.project.code }}
+              <span class="permission-code">{{ fund.project.name }}</span>
+            </td>
+            <td class="nowrap">
+              <template v-if="fund.openPeriod">{{ monthName(fund.openPeriod) }}</template>
+              <template v-else>
+                Ninguno
+                <span class="permission-code">Hay que abrir el mes para usarla</span>
+              </template>
+            </td>
+            <td class="num">{{ fund.openPeriod ? formatUsd(fund.openPeriod.availableCents) : '' }}</td>
+            <td>{{ fund.openPeriod ? fund.openPeriod.pendingVoucherCount : '' }}</td>
+            <td><StatusBadge :label="fund.active ? 'En uso' : 'Fuera de uso'" :tone="activeTone(fund.active)" /></td>
+            <td>
+              <div class="table-actions">
+                <RouterLink class="button" :class="{ 'button-primary': fund.openPeriod?.pendingVoucherCount }" :to="{ name: 'petty-cash', query: { fund: fund.id } }">Entrar</RouterLink>
+                <button v-if="canManage" type="button" class="button" @click="openForm(fund)">Editar</button>
+              </div>
+            </td>
+          </tr>
+          <tr v-if="funds.length === 0">
+            <td colspan="7">Todavía no hay cajas chicas.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </template>
+
+  <!-- DETALLE DE UNA CAJA -->
+  <template v-else>
     <nav aria-label="Ruta">
       <ol class="crumbs">
         <li>
@@ -337,330 +450,307 @@ onMounted(async () => {
       <div>
         <h1>
           {{ selected.name }}
-          <StatusBadge :label="selected.active ? 'Activa' : 'Inactiva'" :tone="activeTone(selected.active)" />
+          <StatusBadge :label="selected.active ? 'En uso' : 'Fuera de uso'" :tone="activeTone(selected.active)" />
         </h1>
         <p class="hint">{{ selected.project.code }} · {{ selected.project.name }}</p>
       </div>
       <button v-if="canManage" type="button" class="button" @click="openForm(selected)">Editar caja</button>
     </div>
-  <section class="card">
 
-    <template v-if="selected.openPeriod">
-      <p>
-        Mes abierto <strong>{{ monthLabel(selected.openPeriod) }}</strong> · Saldo inicial
-        {{ formatUsd(selected.openPeriod.openingBalanceCents) }} · Reposición
-        {{ formatUsd(selected.openPeriod.replenishmentCents) }}
-      </p>
-      <p class="hint">
-        Gastado {{ formatUsd(selected.openPeriod.spentCents) }} · Desembolsado sin rendir
-        {{ formatUsd(selected.openPeriod.disbursedCents) }} · Aprobado sin desembolsar
-        {{ formatUsd(selected.openPeriod.reservedCents) }} · Efectivo en caja {{ formatUsd(selected.openPeriod.cashCents) }}
-        · Disponible <strong>{{ formatUsd(selected.openPeriod.availableCents) }}</strong>
-      </p>
-      <div class="actions">
-        <button v-if="canRequest && selected.active" type="button" class="button button-primary" @click="openVoucherForm">
-          Solicitar vale
-        </button>
-        <button v-if="canManage" type="button" class="button button-danger" :disabled="busy" @click="confirmingClose = true">
-          Cerrar mes
-        </button>
-      </div>
+    <p v-if="detailError && !voucherFormOpen && !voucherAction && !voucherConfirm && !confirmingClose" class="error section-gap" role="alert">{{ detailError }}</p>
 
-      <AppModal
-        :open="confirmingClose"
-        :title="`Cerrar mes ${monthLabel(selected.openPeriod)}`"
-        @close="confirmingClose = false"
-      >
-        <div class="form-grid">
-          <p class="hint">
-            El mes <strong>{{ monthLabel(selected.openPeriod) }}</strong> se cerrará con un saldo final de
-            <strong>{{ formatUsd(selected.openPeriod.cashCents) }}</strong>, que pasará al mes siguiente. Esta acción no se
-            puede deshacer.
-          </p>
-          <div class="actions">
-            <button type="button" class="button" @click="confirmingClose = false">Cancelar</button>
-            <button
-              type="button"
-              class="button button-danger-solid"
-              :disabled="busy"
-              @click="confirmingClose = false; run(() => closePeriod(selected!.openPeriod!.id))"
-            >
-              Sí, cerrar mes
-            </button>
-          </div>
+    <!-- Hay un mes abierto -->
+    <template v-if="open">
+      <section class="next-step" :class="{ 'next-step-waiting': !(canRequest && selected.active) }">
+        <div class="next-step-text">
+          <span class="eyebrow">Mes abierto</span>
+          <strong>{{ monthName(open) }}</strong>
+          <span class="next-step-detail">
+            Hay {{ formatUsd(open.cashCents) }} de dinero en la caja y se pueden pedir vales hasta por {{ formatUsd(open.availableCents) }}.
+          </span>
         </div>
-      </AppModal>
+        <div class="actions">
+          <button v-if="canRequest && selected.active" type="button" class="button button-primary" @click="openVoucherForm">Pedir dinero de la caja (vale)</button>
+        </div>
+      </section>
+
+      <section class="card" aria-label="Resumen">
+        <dl class="summary-grid">
+          <div>
+            <dt>Dinero en la caja</dt>
+            <dd>{{ formatUsd(open.cashCents) }}</dd>
+          </div>
+          <div>
+            <dt>Se puede pedir hasta</dt>
+            <dd>{{ formatUsd(open.availableCents) }}</dd>
+          </div>
+          <div>
+            <dt>Vales en trámite</dt>
+            <dd>{{ open.pendingVoucherCount }}</dd>
+          </div>
+        </dl>
+        <details class="more-filters">
+          <summary>¿De dónde salen estos números?</summary>
+          <ul class="plain-list">
+            <li><span>Con lo que empezó el mes</span><strong>{{ formatUsd(open.openingBalanceCents) }}</strong></li>
+            <li><span>Dinero que se agregó este mes</span><strong>{{ formatUsd(open.replenishmentCents) }}</strong></li>
+            <li><span>Ya gastado, con comprobante</span><strong>{{ formatUsd(open.spentCents) }}</strong></li>
+            <li><span>Entregado, falta el comprobante</span><strong>{{ formatUsd(open.disbursedCents) }}</strong></li>
+            <li><span>Aprobado, falta entregar el dinero</span><strong>{{ formatUsd(open.reservedCents) }}</strong></li>
+          </ul>
+        </details>
+      </section>
     </template>
-    <template v-else>
-      <p class="hint">La caja no tiene un mes abierto.</p>
-      <form v-if="canManage && selected.active" class="form-grid" @submit.prevent="submitOpen">
+
+    <!-- No hay mes abierto -->
+    <section v-else class="card">
+      <h2>Esta caja no tiene un mes abierto</h2>
+      <p class="hint">
+        <template v-if="canManage && selected.active">Para que se puedan pedir vales hay que abrir el mes.</template>
+        <template v-else>Hay que esperar a que el Receptor abra el mes para poder pedir vales.</template>
+      </p>
+      <form v-if="canManage && selected.active" class="open-month" @submit.prevent="submitOpen">
         <label v-if="periods.length === 0" class="field">
-          Mes
-          <input v-model="openMonthForm.month" type="month" required :max="today.slice(0, 7)" />
+          ¿Qué mes se abre?
+          <input v-model="openMonthForm.month" type="month" required :max="thisMonth" />
         </label>
-        <p v-else class="hint">
-          Se abre el mes siguiente al último cerrado, con su saldo final ({{ formatUsd(periods[0]?.closingBalanceCents ?? 0) }})
-          como saldo inicial.
+        <p v-else-if="nextMonth" class="hint">
+          Se abrirá <strong>{{ monthName(nextMonth) }}</strong>, empezando con lo que sobró del mes anterior ({{ formatUsd(periods[0]?.closingBalanceCents ?? 0) }}).
         </p>
         <label class="field">
-          Reposición (USD)
-          <input v-model="openMonthForm.amount" inputmode="decimal" :required="periods.length === 0" placeholder="0.00" />
+          Dinero que se agrega a la caja este mes (USD)
+          <input v-model="openMonthForm.amount" inputmode="decimal" :required="periods.length === 0" placeholder="0,00" />
+          <span class="hint">{{ periods.length === 0 ? 'Es el dinero con el que empieza la caja.' : 'Si no se agrega dinero nuevo, déjalo vacío.' }}</span>
         </label>
+        <p v-if="nextMonthIsFuture && nextMonth" class="error" role="alert">
+          Todavía no se puede abrir {{ monthName(nextMonth) }}: se podrá desde el 01/{{ String(nextMonth.month).padStart(2, '0') }}/{{ nextMonth.year }}.
+        </p>
         <div class="actions">
-          <button type="submit" class="button button-primary" :disabled="busy">Abrir mes</button>
+          <button type="submit" class="button button-primary" :disabled="busy || nextMonthIsFuture">Abrir el mes</button>
         </div>
       </form>
-    </template>
+    </section>
 
-    <AppModal :open="voucherFormOpen" title="Solicitar vale" @close="voucherFormOpen = false">
+    <!-- Vales -->
+    <section class="card">
+      <div class="page-header">
+        <h2>Vales<template v-if="viewedPeriod"> de {{ monthName(viewedPeriod) }}</template></h2>
+        <label v-if="periods.length > 1" class="field field-inline">
+          Ver otro mes
+          <select :value="viewedPeriodId" @change="viewPeriod(Number(($event.target as HTMLSelectElement).value))">
+            <option v-for="period in periods" :key="period.id" :value="period.id">{{ monthName(period) }} {{ period.status === 'OPEN' ? '(abierto)' : '(cerrado)' }}</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Vale</th>
+              <th scope="col">Para qué y para quién</th>
+              <th scope="col" class="num">Monto</th>
+              <th scope="col">Qué pasa ahora</th>
+              <th scope="col"><span class="sr-only">Acciones</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="voucher in vouchers" :key="voucher.id">
+              <td class="nowrap">#{{ voucher.id }}</td>
+              <td>
+                {{ voucher.concept }}
+                <span class="permission-code">Para {{ voucher.beneficiary }} · pedido por {{ voucher.requestedBy?.name }}</span>
+              </td>
+              <td class="num">{{ formatUsd(voucher.amountCents) }}</td>
+              <td>
+                <StatusBadge :label="PLAIN_STATUS[voucher.status]" :tone="PLAIN_TONE[voucher.status]" />
+                <span class="permission-code">{{ plain(voucher).text }}</span>
+              </td>
+              <td>
+                <div class="table-actions">
+                  <template v-if="voucher.status === 'REQUESTED' && canManage">
+                    <button type="button" class="button" @click="openVoucherAction('reject', voucher)">Rechazar</button>
+                    <button type="button" class="button button-primary" :disabled="busy" @click="voucherConfirm = { kind: 'approve', voucher }">Aprobar</button>
+                  </template>
+                  <button v-if="voucher.status === 'REQUESTED' && isOwnVoucher(voucher)" type="button" class="button" :disabled="busy" @click="voucherConfirm = { kind: 'cancel', voucher }">
+                    Cancelar pedido
+                  </button>
+                  <button v-if="voucher.status === 'APPROVED' && canManage" type="button" class="button button-primary" :disabled="busy" @click="voucherConfirm = { kind: 'disburse', voucher }">
+                    Entregar el dinero
+                  </button>
+                  <button v-if="voucher.status === 'DISBURSED' && isOwnVoucher(voucher)" type="button" class="button button-primary" @click="openVoucherAction('settle', voucher)">
+                    Entregar comprobante
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="vouchers.length === 0">
+              <td colspan="5">No hay vales en este mes.<template v-if="open && canRequest && selected.active"> Cuando necesites dinero de la caja, pulsa «Pedir dinero de la caja».</template></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Cerrar el mes y meses anteriores -->
+    <section v-if="open && canManage" class="more-actions">
+      <h2>Otras opciones</h2>
+      <button type="button" class="button button-danger" :disabled="busy" @click="confirmingClose = true">Cerrar el mes</button>
+      <p class="hint">Se cierra al terminar el mes, cuando todos los vales ya están terminados. El dinero que sobre pasa al mes siguiente.</p>
+    </section>
+
+    <details class="card fold">
+      <summary>
+        <AppIcon name="chevron" />
+        Historial de meses
+        <span class="hint">{{ periods.length }} {{ periods.length === 1 ? 'mes' : 'meses' }}</span>
+      </summary>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Mes</th>
+              <th scope="col">Situación</th>
+              <th scope="col" class="num">Empezó con</th>
+              <th scope="col" class="num">Se agregó</th>
+              <th scope="col" class="num">Se gastó</th>
+              <th scope="col" class="num">Terminó con</th>
+              <th scope="col"><span class="sr-only">Opciones</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="period in periods" :key="period.id">
+              <td class="nowrap">{{ monthName(period) }}</td>
+              <td><StatusBadge :label="period.status === 'OPEN' ? 'Abierto' : 'Cerrado'" :tone="period.status === 'OPEN' ? 'success' : 'neutral'" /></td>
+              <td class="num">{{ formatUsd(period.openingBalanceCents) }}</td>
+              <td class="num">{{ formatUsd(period.replenishmentCents) }}</td>
+              <td class="num">{{ formatUsd(period.spentCents) }}</td>
+              <td class="num">{{ period.closingBalanceCents === null ? '' : formatUsd(period.closingBalanceCents) }}</td>
+              <td>
+                <button v-if="period.id !== viewedPeriodId" type="button" class="button" @click="viewPeriod(period.id)">Ver sus vales</button>
+              </td>
+            </tr>
+            <tr v-if="periods.length === 0">
+              <td colspan="7">La caja todavía no tiene meses.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Pedir vale -->
+    <AppModal :open="voucherFormOpen" title="Pedir dinero de la caja (vale)" @close="voucherFormOpen = false">
       <form class="form-grid" @submit.prevent="submitVoucher">
+        <p v-if="open" class="amount-preview">En la caja se puede pedir hasta <strong>{{ formatUsd(open.availableCents) }}</strong>.</p>
         <label class="field">
-          Concepto
-          <input v-model="voucherForm.concept" required minlength="3" maxlength="200" />
+          ¿Para qué es el dinero?
+          <input v-model="voucherForm.concept" required minlength="3" maxlength="200" placeholder="Ej.: Compra de papelería" />
         </label>
         <label class="field">
-          Beneficiario
-          <input v-model="voucherForm.beneficiary" required maxlength="120" />
+          ¿Quién va a recibir el dinero?
+          <input v-model="voucherForm.beneficiary" required maxlength="120" placeholder="Nombre de la persona" />
         </label>
         <label class="field">
-          Monto (USD)
-          <input v-model="voucherForm.amount" inputmode="decimal" required placeholder="50.00" />
+          ¿Cuánto necesitas? (USD)
+          <input v-model="voucherForm.amount" inputmode="decimal" required placeholder="Ej.: 50,00" />
         </label>
         <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
-        <div class="actions">
-          <button type="button" class="button" @click="voucherFormOpen = false">Cancelar</button>
-          <button type="submit" class="button button-primary" :disabled="busy">Solicitar</button>
+        <div class="confirm-actions">
+          <button type="button" class="button" @click="voucherFormOpen = false">Volver</button>
+          <button type="submit" class="button button-primary" :disabled="busy">{{ busy ? 'Un momento…' : 'Pedir el dinero' }}</button>
         </div>
       </form>
     </AppModal>
 
-    <AppModal
-      :open="Boolean(voucherAction)"
-      :title="
-        voucherAction
-          ? `${voucherAction.type === 'reject' ? 'Rechazar' : 'Rendir'} vale #${voucherAction.voucher.id} · ${voucherAction.voucher.concept}`
-          : ''
-      "
-      @close="voucherAction = null"
-    >
-      <form v-if="voucherAction" class="form-grid" @submit.prevent="submitVoucherAction">
-        <label v-if="voucherAction.type === 'reject'" class="field">
-          Motivo
-          <input v-model="actionForm.reason" required minlength="5" maxlength="500" />
-        </label>
-        <template v-else>
-          <label class="field">
-            Gastado (USD)
-            <input v-model="actionForm.spent" inputmode="decimal" required />
-            <span class="hint">Desembolsado: {{ formatUsd(voucherAction.voucher.amountCents) }}. Lo no gastado vuelve a la caja.</span>
-          </label>
-          <label class="field">
-            Número de comprobante
-            <input v-model="actionForm.receiptReference" required maxlength="120" />
-          </label>
-          <label class="field">
-            Fecha del comprobante
-            <input v-model="actionForm.receiptDate" type="date" required :max="today" />
-          </label>
-        </template>
-        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
-        <div class="actions">
-          <button type="button" class="button" @click="voucherAction = null">Volver</button>
-          <button
-            type="submit"
-            class="button"
-            :class="voucherAction.type === 'reject' ? 'button-danger-solid' : 'button-primary'"
-            :disabled="busy"
-          >
-            {{ voucherAction.type === 'reject' ? 'Rechazar vale' : 'Rendir vale' }}
-          </button>
-        </div>
-      </form>
-    </AppModal>
-
-    <AppModal
-      :open="Boolean(voucherConfirm)"
-      :title="voucherConfirm ? `${VOUCHER_CONFIRM_TEXT[voucherConfirm.kind].title} #${voucherConfirm.voucher.id}` : ''"
-      @close="voucherConfirm = null"
-    >
-      <div v-if="voucherConfirm" class="form-grid">
+    <!-- Entregar comprobante -->
+    <AppModal :open="voucherAction?.type === 'settle'" title="Entregar el comprobante del gasto" @close="voucherAction = null">
+      <form v-if="voucherAction?.type === 'settle'" class="form-grid" @submit.prevent="submitVoucherAction">
         <p class="hint">
-          {{ voucherConfirm.voucher.concept }} · {{ voucherConfirm.voucher.beneficiary }} ·
+          Recibiste <strong>{{ formatUsd(voucherAction.voucher.amountCents) }}</strong> para «{{ voucherAction.voucher.concept }}». Cuéntale al sistema cuánto
+          gastaste y anota los datos de la factura o el recibo.
+        </p>
+        <label class="field">
+          ¿Cuánto se gastó en total? (USD)
+          <input v-model="actionForm.spent" inputmode="decimal" required />
+          <span class="hint">Si gastaste menos de lo que recibiste, lo que sobra vuelve a la caja.</span>
+        </label>
+        <label class="field">
+          Número de la factura o del recibo
+          <input v-model="actionForm.receiptReference" required maxlength="120" placeholder="Ej.: 000123" />
+        </label>
+        <label class="field">
+          Fecha que dice la factura o el recibo
+          <input v-model="actionForm.receiptDate" type="date" required :max="today" />
+        </label>
+        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
+        <div class="confirm-actions">
+          <button type="button" class="button" @click="voucherAction = null">Volver</button>
+          <button type="submit" class="button button-primary" :disabled="busy">{{ busy ? 'Un momento…' : 'Entregar comprobante' }}</button>
+        </div>
+      </form>
+    </AppModal>
+
+    <!-- Rechazar -->
+    <ConfirmDialog
+      :open="voucherAction?.type === 'reject'"
+      title="¿Rechazar este vale?"
+      confirm-label="Sí, rechazar"
+      danger
+      :busy="busy"
+      :error="voucherAction?.type === 'reject' ? detailError : ''"
+      reason-label="¿Por qué lo rechazas? (lo verá quien lo pidió)"
+      reason-hint="Ej.: No hay dinero suficiente este mes"
+      reason-required
+      v-model:reason="actionForm.reason"
+      @close="voucherAction = null"
+      @confirm="submitVoucherAction"
+    >
+      <p v-if="voucherAction" class="hint">
+        Vale de <strong>{{ formatUsd(voucherAction.voucher.amountCents) }}</strong> para «{{ voucherAction.voucher.concept }}». No se entregará dinero.
+      </p>
+    </ConfirmDialog>
+
+    <!-- Aprobar / entregar / cancelar -->
+    <ConfirmDialog
+      :open="Boolean(voucherConfirm)"
+      :title="voucherConfirm ? CONFIRM_TEXT[voucherConfirm.kind].title : ''"
+      :confirm-label="voucherConfirm ? CONFIRM_TEXT[voucherConfirm.kind].button : ''"
+      :danger="voucherConfirm?.kind === 'cancel'"
+      :busy="busy"
+      :error="voucherConfirm ? detailError : ''"
+      @close="voucherConfirm = null"
+      @confirm="confirmVoucher"
+    >
+      <template v-if="voucherConfirm">
+        <p class="hint">
+          «{{ voucherConfirm.voucher.concept }}» · para {{ voucherConfirm.voucher.beneficiary }} ·
           <strong>{{ formatUsd(voucherConfirm.voucher.amountCents) }}</strong>
         </p>
-        <p v-if="voucherConfirm.kind === 'approve'" class="hint">El monto queda reservado en la caja hasta que se desembolse.</p>
-        <p v-else-if="voucherConfirm.kind === 'disburse'" class="hint">
-          Confirma que entregaste {{ formatUsd(voucherConfirm.voucher.amountCents) }} a {{ voucherConfirm.voucher.beneficiary }}.
-          Después deberá rendirlo con un comprobante.
+        <p v-if="voucherConfirm.kind === 'approve'">Ese dinero queda apartado en la caja hasta que se entregue.</p>
+        <p v-else-if="voucherConfirm.kind === 'disburse'">
+          Confirma que ya le entregaste {{ formatUsd(voucherConfirm.voucher.amountCents) }} en efectivo a {{ voucherConfirm.voucher.beneficiary }}. Después tendrá que
+          entregar el comprobante del gasto.
         </p>
-        <p v-else class="hint">El vale deja de estar pendiente y no se puede reactivar.</p>
-        <p v-if="detailError" class="error" role="alert">{{ detailError }}</p>
-        <div class="actions">
-          <button type="button" class="button" @click="voucherConfirm = null">Volver</button>
-          <button
-            type="button"
-            class="button"
-            :class="voucherConfirm.kind === 'cancel' ? 'button-danger-solid' : 'button-primary'"
-            :disabled="busy"
-            @click="confirmVoucher"
-          >
-            {{ VOUCHER_CONFIRM_TEXT[voucherConfirm.kind].button }}
-          </button>
-        </div>
-      </div>
-    </AppModal>
+        <p v-else>El pedido se cancela y no se puede volver a activar.</p>
+      </template>
+    </ConfirmDialog>
 
-    <p v-if="detailError" class="error section-gap" role="alert">{{ detailError }}</p>
-
-    <h2 class="section-gap">
-      Vales<template v-if="viewedPeriod"> de {{ monthLabel(viewedPeriod) }}</template>
-    </h2>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Vale</th>
-            <th scope="col">Concepto</th>
-            <th scope="col">Beneficiario</th>
-            <th scope="col" class="num">Monto</th>
-            <th scope="col">Estado</th>
-            <th scope="col">Rendición</th>
-            <th scope="col"><span class="sr-only">Acciones</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="voucher in vouchers" :key="voucher.id">
-            <td class="nowrap">#{{ voucher.id }}</td>
-            <td>
-              {{ voucher.concept }}
-              <span class="permission-code">Solicitado por {{ voucher.requestedBy?.name }}</span>
-            </td>
-            <td>{{ voucher.beneficiary }}</td>
-            <td class="num">{{ formatUsd(voucher.amountCents) }}</td>
-            <td>
-              <StatusBadge :label="VOUCHER_STATUS_LABELS[voucher.status]" :tone="VOUCHER_STATUS_TONES[voucher.status]" />
-              <span v-if="voucher.rejectionReason" class="permission-code">{{ voucher.rejectionReason }}</span>
-            </td>
-            <td>
-              <template v-if="voucher.status === 'SETTLED'">
-                Gastado {{ formatUsd(voucher.spentCents ?? 0) }}
-                <span class="permission-code">
-                  Devuelto {{ formatUsd(voucher.returnedCents ?? 0) }} · Comprobante {{ voucher.receiptReference }} del
-                  {{ formatDate(voucher.receiptDate) }}
-                </span>
-              </template>
-            </td>
-            <td>
-              <div class="actions">
-                <template v-if="voucher.status === 'REQUESTED'">
-                  <button v-if="canManage" type="button" class="button button-danger" @click="openVoucherAction('reject', voucher)">
-                    Rechazar
-                  </button>
-                  <button v-if="canManage" type="button" class="button button-primary" :disabled="busy" @click="voucherConfirm = { kind: 'approve', voucher }">
-                    Aprobar
-                  </button>
-                  <button v-if="isOwnVoucher(voucher)" type="button" class="button button-danger" :disabled="busy" @click="voucherConfirm = { kind: 'cancel', voucher }">
-                    Cancelar
-                  </button>
-                </template>
-                <button
-                  v-if="voucher.status === 'APPROVED' && canManage"
-                  type="button"
-                  class="button button-primary"
-                  :disabled="busy"
-                  @click="voucherConfirm = { kind: 'disburse', voucher }"
-                >
-                  Desembolsar
-                </button>
-                <button
-                  v-if="voucher.status === 'DISBURSED' && isOwnVoucher(voucher)"
-                  type="button"
-                  class="button button-primary"
-                  @click="openVoucherAction('settle', voucher)"
-                >
-                  Rendir
-                </button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="vouchers.length === 0">
-            <td colspan="7">No hay vales en este mes.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h2 class="section-gap">Meses</h2>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Mes</th>
-            <th scope="col">Estado</th>
-            <th scope="col" class="num">Saldo inicial</th>
-            <th scope="col" class="num">Reposición</th>
-            <th scope="col" class="num">Gastado</th>
-            <th scope="col" class="num">Saldo final</th>
-            <th scope="col"><span class="sr-only">Acciones</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="period in periods" :key="period.id">
-            <td class="nowrap">{{ monthLabel(period) }}</td>
-            <td><StatusBadge :label="period.status === 'OPEN' ? 'Abierto' : 'Cerrado'" :tone="period.status === 'OPEN' ? 'success' : 'neutral'" /></td>
-            <td class="num">{{ formatUsd(period.openingBalanceCents) }}</td>
-            <td class="num">{{ formatUsd(period.replenishmentCents) }}</td>
-            <td class="num">{{ formatUsd(period.spentCents) }}</td>
-            <td class="num">{{ period.closingBalanceCents === null ? '' : formatUsd(period.closingBalanceCents) }}</td>
-            <td>
-              <button v-if="period.id !== viewedPeriodId" type="button" class="button" @click="viewPeriod(period.id)">
-                Ver vales
-              </button>
-            </td>
-          </tr>
-          <tr v-if="periods.length === 0">
-            <td colspan="7">La caja todavía no tiene meses.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-  </template>
-
-  <template v-if="!selected">
-  <p v-if="error" class="error" role="alert">{{ error }}</p>
-  <p v-else-if="loading">Cargando…</p>
-  <div v-else class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">Caja</th>
-          <th scope="col">Proyecto</th>
-          <th scope="col">Mes abierto</th>
-          <th scope="col" class="num">Disponible</th>
-          <th scope="col">Estado</th>
-          <th scope="col"><span class="sr-only">Acciones</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="fund in funds" :key="fund.id">
-          <td>{{ fund.name }}</td>
-          <td class="nowrap" :title="fund.project.name">{{ fund.project.code }}</td>
-          <td class="nowrap">{{ fund.openPeriod ? monthLabel(fund.openPeriod) : 'Ninguno' }}</td>
-          <td class="num">{{ fund.openPeriod ? formatUsd(fund.openPeriod.availableCents) : '' }}</td>
-          <td><StatusBadge :label="fund.active ? 'Activa' : 'Inactiva'" :tone="activeTone(fund.active)" /></td>
-          <td>
-            <div class="actions">
-              <RouterLink class="button" :to="{ name: 'petty-cash', query: { fund: fund.id } }">Ver</RouterLink>
-              <button v-if="canManage" type="button" class="button" @click="openForm(fund)">Editar</button>
-            </div>
-          </td>
-        </tr>
-        <tr v-if="funds.length === 0">
-          <td colspan="6">No hay cajas chicas.</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+    <!-- Cerrar mes -->
+    <ConfirmDialog
+      :open="confirmingClose && Boolean(open)"
+      :title="open ? `¿Cerrar ${monthName(open)}?` : ''"
+      confirm-label="Sí, cerrar el mes"
+      danger
+      :busy="busy"
+      :error="confirmingClose ? detailError : ''"
+      @close="confirmingClose = false"
+      @confirm="open && run(() => closePeriod(open!.id), 'Listo: el mes quedó cerrado. Lo que sobró pasa al mes siguiente.')"
+    >
+      <template v-if="open">
+        <p class="hint">
+          El mes se cerrará con <strong>{{ formatUsd(open.cashCents) }}</strong> en la caja. Ese dinero pasa al mes siguiente.
+        </p>
+        <p><strong>Esto no se puede deshacer.</strong> Solo se puede cerrar cuando todos los vales del mes ya están terminados, rechazados o cancelados.</p>
+      </template>
+    </ConfirmDialog>
   </template>
 </template>

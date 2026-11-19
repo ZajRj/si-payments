@@ -110,3 +110,12 @@ export async function annulPayment(id: number, reason: string) {
   const { payment } = await http<{ payment: Payment }>(`/payments/${id}/annul`, { method: 'POST', body: { reason } });
   return payment;
 }
+
+export async function listPayments(filters: { personId?: number; requestId?: number; projectId?: number } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const { payments } = await http<{ payments: Payment[] }>(`/payments?${params}`);
+  return payments;
+}
